@@ -114,7 +114,7 @@ func (c Catalog) Resolve(ctx context.Context, source, id string) (*Media, error)
 	var err error
 	switch source {
 	case "netease":
-		raw, err = c.neteaseMedia(ctx, id)
+		raw, err = c.neteaseMedia(ctx, id, "")
 	case "tencent":
 		raw, err = c.tencentMedia(ctx, id)
 	case "kuwo":
@@ -124,6 +124,10 @@ func (c Catalog) Resolve(ctx context.Context, source, id string) (*Media, error)
 	case "apple":
 		raw, err = c.appleMedia(ctx, id)
 	}
+	return parseMedia(source, raw, err)
+}
+
+func parseMedia(source, raw string, err error) (*Media, error) {
 	if err != nil || raw == "" {
 		return nil, err
 	}
@@ -198,20 +202,25 @@ func (c Catalog) request(ctx context.Context, endpoint string, args url.Values, 
 }
 
 func (c Catalog) readCatalog(req *http.Request) ([]byte, error) {
+	data, _, err := c.readCatalogResponse(req)
+	return data, err
+}
+
+func (c Catalog) readCatalogResponse(req *http.Request) ([]byte, []*http.Cookie, error) {
 	res, err := c.Client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s returned HTTP %d", req.URL.Host, res.StatusCode)
+		return nil, nil, fmt.Errorf("%s returned HTTP %d", req.URL.Host, res.StatusCode)
 	}
 	const limit = 2 << 20
 	data, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if len(data) > limit {
-		return nil, fmt.Errorf("response from %s exceeded limit", req.URL.Host)
+		return nil, nil, fmt.Errorf("response from %s exceeded limit", req.URL.Host)
 	}
-	return data, err
+	return data, res.Cookies(), err
 }
 
 func (c Catalog) get(ctx context.Context, endpoint string, args url.Values, referer, agent string, dst any) error {

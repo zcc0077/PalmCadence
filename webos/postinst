@@ -31,6 +31,10 @@ cache=/media/cryptofs/apps/.palmcadence-cache
 if [ ! -d "$cache" ]; then
     (umask 077; mkdir "$cache" && chown nobody "$cache") || echo "Unable to initialize audio cache." >&2
 fi
+account=/media/cryptofs/apps/.palmcadence-account
+if [ ! -d "$account" ]; then
+    (umask 077; mkdir "$account" && chown nobody "$account") || echo "Unable to initialize account storage." >&2
+fi
 install -m 0644 "$app/native/palmcadence.upstart" "$new_job"
 mv -f "$new_job" "$job"
 # Upstart 0.3 watches /etc/event.d for new jobs. Wait for registration.

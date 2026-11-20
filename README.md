@@ -4,6 +4,8 @@
 
 点应用右上角的「设置」，也可以从 webOS 左上角的应用菜单进入。可设置播放顺序、定时停止、启动音源、Apple Music 地区和深浅配色。
 
+首页右上角点「登录」，用手机上的网易云音乐 App 扫码并确认。登录后从「我的」打开个人歌单，在平台授权范围内播放。退出登录会清除本机的登录会话。
+
 「播放」可开启淡入淡出。「存储」显示音频缓存占用和设备剩余空间，可手动清理或关闭缓存。默认上限为 32 MB，最高可设为 8 GB，缓存写入会预留 128 MB 给设备。Apple Music 试听使用流式播放。
 
 支持 Pre、Pre 2、Pre 3、Pixi、Veer 的三种屏幕尺寸。TouchPad 横竖屏使用双栏，搜索结果和当前曲目同时显示。
@@ -28,13 +30,14 @@
 
 | 音源 | 支持情况 |
 | --- | --- |
-| 网易云音乐、酷我、酷狗 | 搜索，播放平台提供的游客音源 |
+| 网易云音乐 | 搜索、播放、扫码登录、浏览个人歌单 |
+| 酷我、酷狗 | 搜索，播放平台提供的游客音源 |
 | QQ 音乐 | 搜索，打开原曲页面。测试曲目未返回游客音源 |
 | Apple Music | 搜索，播放 iTunes 提供的试听，可切换地区 |
 
 ## 安装
 
-把 `org.palmcadence.app.player_0.3.1_all.ipk` 通过 [Preware](https://github.com/webos-internals/preware) 安装到 webOS。IPK 内含 ARM 和模拟器版本，以及处理 HTTPS 的本机组件。设备联网后即可搜索和播放，无需在电脑上启动服务。
+把 `org.palmcadence.app.player_0.4.0_all.ipk` 通过 [Preware](https://github.com/webos-internals/preware) 安装到 webOS。IPK 内含 ARM 和模拟器版本，以及处理 HTTPS 的本机组件。设备联网后即可搜索和播放，无需在电脑上启动服务。
 
 ## 从源码打包
 

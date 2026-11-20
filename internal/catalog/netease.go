@@ -7,23 +7,40 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 )
 
-// NetEase's guest request envelope is adapted from Meting, under the MIT license.
 func (c Catalog) netease(ctx context.Context, route string, payload any, dst any) error {
+	_, err := c.neteaseRequest(ctx, route, payload, "", dst)
+	return err
+}
+
+// NetEase's request envelope is adapted from Meting, under the MIT license.
+func (c Catalog) neteaseRequest(ctx context.Context, route string, payload any, login string, dst any) ([]*http.Cookie, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if login != "" {
+		var fields map[string]any
+		if err := json.Unmarshal(body, &fields); err != nil {
+			return nil, err
+		}
+		fields["header"] = map[string]string{"MUSIC_U": login, "os": "android", "appver": "8.7.01"}
+		body, err = json.Marshal(fields)
+		if err != nil {
+			return nil, err
+		}
 	}
 	message := string(body)
 	digest := md5.Sum([]byte("nobody" + route + "use" + message + "md5forencrypt"))
 	clear := []byte(fmt.Sprintf("%s-36cd479b6b5-%s-36cd479b6b5-%x", route, message, digest))
 	cipher, err := aes.NewCipher([]byte("e82ckenh8dichen8"))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	size := cipher.BlockSize()
 	padding := size - len(clear)%size
@@ -34,12 +51,22 @@ func (c Catalog) netease(ctx context.Context, route string, payload any, dst any
 		cipher.Encrypt(clear[offset:], clear[offset:])
 	}
 	form := url.Values{"params": {strings.ToUpper(hex.EncodeToString(clear))}}
-	data, err := c.request(ctx, "https://music.163.com/eapi/"+strings.TrimPrefix(route, "/api/"), nil,
-		form.Encode(), "application/x-www-form-urlencoded", "https://music.163.com/", "NeteaseMusic/8.7.01")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://music.163.com/eapi/"+strings.TrimPrefix(route, "/api/"), strings.NewReader(form.Encode()))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return json.Unmarshal(data, dst)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Referer", "https://music.163.com/")
+	req.Header.Set("User-Agent", "NeteaseMusic/8.7.01")
+	if login != "" {
+		req.AddCookie(&http.Cookie{Name: "MUSIC_U", Value: login})
+	}
+	data, cookies, err := c.readCatalogResponse(req)
+	if err != nil {
+		return nil, err
+	}
+	return cookies, json.Unmarshal(data, dst)
 }
 
 func (c Catalog) neteaseSearch(ctx context.Context, query string, page int) (Results, error) {
@@ -71,7 +98,7 @@ func (c Catalog) neteaseSearch(ctx context.Context, query string, page int) (Res
 	return result, nil
 }
 
-func (c Catalog) neteaseMedia(ctx context.Context, id string) (string, error) {
+func (c Catalog) neteaseMedia(ctx context.Context, id, login string) (string, error) {
 	var payload struct {
 		Code int
 		Data []struct {
@@ -79,7 +106,10 @@ func (c Catalog) neteaseMedia(ctx context.Context, id string) (string, error) {
 			FreeTrialInfo *struct{}
 		}
 	}
-	err := c.netease(ctx, "/api/song/enhance/player/url", map[string]any{"ids": []string{id}, "br": 128000}, &payload)
+	_, err := c.neteaseRequest(ctx, "/api/song/enhance/player/url", map[string]any{"ids": []string{id}, "br": 128000}, login, &payload)
+	if err == nil && login != "" && (payload.Code == 301 || payload.Code == 401) {
+		return "", ErrNetEaseSession
+	}
 	if err != nil || len(payload.Data) == 0 || payload.Code != 200 {
 		return "", err
 	}

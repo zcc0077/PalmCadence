@@ -30,10 +30,11 @@ shutil.copy2(scratch / "ca.pem", native / "ca.pem")
 shutil.copy2("webos/palmcadence.upstart", native)
 shutil.copytree("notices", native / "notices")
 shutil.copy2(Path(scratch) / "go/LICENSE", native / "notices/Go.txt")
-module_dir = subprocess.check_output(
-    [str(scratch / "go/bin/go"), "list", "-m", "-f", "{{.Dir}}", "github.com/titanous/json5"], text=True,
-).strip()
-shutil.copy2(Path(module_dir) / "LICENSE", native / "notices/json5.txt")
+for name, module in (("json5", "github.com/titanous/json5"), ("go-qrcode", "github.com/skip2/go-qrcode")):
+    module_dir = subprocess.check_output(
+        [str(scratch / "go/bin/go"), "list", "-m", "-f", "{{.Dir}}", module], text=True,
+    ).strip()
+    shutil.copy2(Path(module_dir) / "LICENSE", native / "notices" / (name + ".txt"))
 
 for script in ("postinst", "prerm"):
     path = shutil.copy2(Path("webos") / script, control)

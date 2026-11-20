@@ -40,6 +40,8 @@
   var origin = /^https?:$/.test(location.protocol) ? location.protocol + '//' + location.host : 'http://127.0.0.1:8787';
   var tracks = [];
   var queue = [];
+  var personalQueue = false;
+  var playbackAuthenticated = false;
   var currentIndex = -1;
   var searchVersion = 0;
   var playbackVersion = 0;
@@ -53,6 +55,10 @@
   var searchRegion = preferences.region;
   var trackFade = mediaFade(audio);
   var previewFade = mediaFade(storeAudio);
+  var account = window.createPalmAccount({
+    request: get, visible: visible, message: message, trackRow: trackRow,
+    play: playPersonal, stopPlayback: stopPersonalPlayback, layout: syncLayout
+  });
 
   function readPreferences() {
     var data;
@@ -79,7 +85,7 @@
     var classes = [];
     if (panel === 'results') { classes.push('show-library'); }
     if (preferences.theme === 'light') { classes.push('theme-light'); }
-    if (settingsOpen) { classes.push('settings-open'); }
+    if (settingsOpen || (account && account.opened())) { classes.push('settings-open'); }
     document.body.className = classes.join(' ');
     document.body.setAttribute('data-panel', panel);
   }
@@ -101,18 +107,18 @@
     toggle.title = label;
   }
 
-  function get(path, callback, method) {
+  function get(path, callback, method, body) {
     var xhr = new XMLHttpRequest();
     var done = false;
     var timer = setTimeout(function () {
       complete('连接超时，请检查网络。');
       xhr.abort();
     }, 15000);
-    function complete(error, data) {
+    function complete(error, data, status) {
       if (done) { return; }
       done = true;
       clearTimeout(timer);
-      callback(error, data);
+      callback(error, data, status);
     }
     try {
       xhr.open(method || 'GET', origin + path, true);
@@ -126,12 +132,13 @@
         try { data = JSON.parse(xhr.responseText); }
         catch (error) { complete('无法读取曲目数据。'); return; }
         if (xhr.status !== 200) {
-          complete(data.message || '请求失败。');
+          complete(data.message || '请求失败。', null, xhr.status);
           return;
         }
         complete('', data);
       };
-      xhr.send();
+      if (typeof body === 'string') { xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded'); }
+      xhr.send(typeof body === 'string' ? body : null);
     } catch (error) {
       complete('无法连接到本机播放组件。');
     }
@@ -274,34 +281,40 @@
     parent.appendChild(element);
   }
 
+  function trackRow(track, selected, activate) {
+    var row = document.createElement('li');
+    var button = document.createElement('button');
+    var artwork = document.createElement('span');
+    artwork.className = 'track-art';
+    artwork.setAttribute('aria-hidden', 'true');
+    artwork.setAttribute('data-source', track.source);
+    button.appendChild(artwork);
+    button.type = 'button';
+    button.className = selected ? 'track selected' : 'track';
+    appendText(button, 'span', 'track-title', track.title);
+    appendText(button, 'span', 'track-info', track.artist + (track.album ? ' · ' + track.album : ''));
+    appendText(button, 'span', 'track-action', track.source === 'apple' ? '›' : '▶');
+    button.onclick = activate;
+    row.appendChild(button);
+    return row;
+  }
+
   function renderTracks() {
     var list = byId('tracks');
     var fragment = document.createDocumentFragment();
     var current = queue[currentIndex];
     list.innerHTML = '';
     tracks.forEach(function (track, index) {
-      var row = document.createElement('li');
-      var button = document.createElement('button');
-      var artwork = document.createElement('span');
-      artwork.className = 'track-art';
-      artwork.setAttribute('aria-hidden', 'true');
-      artwork.setAttribute('data-source', track.source);
-      button.appendChild(artwork);
-      button.type = 'button';
-      button.className = current && current.id === track.id && current.source === track.source ? 'track selected' : 'track';
-      appendText(button, 'span', 'track-title', track.title);
-      appendText(button, 'span', 'track-info', track.artist + (track.album ? ' · ' + track.album : ''));
-      appendText(button, 'span', 'track-action', track.source === 'apple' ? '›' : '▶');
-      button.onclick = function () {
+      var selected = current && current.id === track.id && current.source === track.source;
+      fragment.appendChild(trackRow(track, selected, function () {
         if (track.source === 'apple') {
           showStore(track);
         } else {
+          personalQueue = false;
           queue = tracks.slice(0);
           playAt(index);
         }
-      };
-      row.appendChild(button);
-      fragment.appendChild(row);
+      }));
     });
     list.appendChild(fragment);
     visible(byId('more'), hasMore && !requested);
@@ -387,6 +400,38 @@
 
   function playAudio() { playMedia(trackFade, 'player-status'); }
 
+  function playPersonal(items, index) {
+    if (panel === 'store-panel') { showPanel('results'); }
+    personalQueue = true;
+    queue = items.slice(0);
+    playAt(index);
+  }
+
+  function stopPersonalPlayback() {
+    if (!personalQueue && !playbackAuthenticated) { return; }
+    playbackVersion += 1;
+    clearTimeout(playbackWatchdog);
+    resetAudio(audio, trackFade);
+    mediaPath = '';
+    currentIndex = -1;
+    queue = [];
+    personalQueue = playbackAuthenticated = false;
+    ['playing', 'toggle', 'previous', 'next'].forEach(function (id) { byId(id).disabled = true; });
+    visible(byId('provider-link'), false);
+    byId('now-art').removeAttribute('data-source');
+    message('now-title', '未播放');
+    message('now-info', '从搜索结果选择曲目');
+    message('detail-title', '未播放');
+    message('detail-info', '');
+    message('tablet-title', '未播放');
+    message('tablet-info', '');
+    message('player-status', '');
+    updateProgress();
+    renderTracks();
+    account.select(null);
+    if (panel === 'now-panel') { showPanel('results'); }
+  }
+
   function playAt(index) {
     var track = queue[index];
     var version, details;
@@ -395,6 +440,8 @@
     resumeWhenReady = true;
     clearTimeout(playbackWatchdog);
     currentIndex = index;
+    playbackAuthenticated = track.source === 'netease' && account.signedIn();
+    account.select(track);
     mediaPath = '';
     resetAudio(audio, trackFade);
     updateProgress();
@@ -415,7 +462,7 @@
     byId('previous').disabled = index === 0;
     byId('next').disabled = index >= queue.length - 1;
     renderTracks();
-    get('/api/play?source=' + track.source + '&id=' + encodeURIComponent(track.id), function (error, data) {
+    function loadTrack(error, data) {
       if (version !== playbackVersion) { return; }
       if (error) { message('player-status', error); return; }
       mediaPath = data.path;
@@ -434,7 +481,24 @@
           message('player-status', '音频未能开始，可重试或打开原平台。');
         }
       }, 18000);
-    });
+    }
+    function guestStream() {
+      get('/api/play?source=' + track.source + '&id=' + encodeURIComponent(track.id), loadTrack);
+    }
+    if (playbackAuthenticated) {
+      account.fetchPlay(track.id, function (error, data, status) {
+        if (version !== playbackVersion) { return; }
+        if (status === 401) {
+          playbackAuthenticated = false;
+          account.expired(error);
+          if (version === playbackVersion) { guestStream(); }
+          return;
+        }
+        loadTrack(error, data);
+      });
+    } else {
+      guestStream();
+    }
   }
 
   function updateSettings() {
@@ -513,6 +577,7 @@
 
   function showSettings() {
     if (settingsOpen) { return; }
+    account.close();
     settingsOpen = true;
     updateSettings();
     visible(byId('settings'), true);
@@ -526,6 +591,7 @@
   function closeSettings() {
     if (!settingsOpen) { return; }
     closeChoice(false);
+    account.close();
     clearInterval(cacheRefresh);
     settingsOpen = false;
     visible(byId('settings'), false);
@@ -660,11 +726,13 @@
   byId('app-menu-backdrop').onclick = function () { setMenu(false); };
   byId('menu-now').onclick = function () {
     setMenu(false);
+    account.close();
     closeSettings();
     if (panel !== 'store-panel') { showPanel('now-panel'); }
   };
   byId('menu-settings').onclick = function () { setMenu(false); showSettings(); };
   byId('playing').onclick = function () {
+    account.close();
     if (settingsOpen) { closeSettings(); }
     if (panel === 'now-panel') { showResults(); }
     else { showPanel('now-panel'); }
@@ -673,6 +741,7 @@
     if (event.keyCode !== 27 && event.keyCode !== 461) { return; }
     if (activeChoice) { closeChoice(true); }
     else if (menuOpen) { setMenu(false); }
+    else if (account.opened()) { account.back(); }
     else if (settingsOpen) { closeSettings(); }
     else { return; }
     event.preventDefault();

@@ -17,18 +17,20 @@ import (
 )
 
 type stream struct {
-	media    *catalog.Media
-	source   string
-	id       string
-	region   string
-	cacheKey string
-	expires  time.Time
+	media       *catalog.Media
+	source      string
+	id          string
+	region      string
+	cacheKey    string
+	accountHash string
+	expires     time.Time
 }
 
 type appServer struct {
 	catalog   catalog.Catalog
 	media     *http.Client
 	cache     *audioCache
+	account   *accountStore
 	web       http.Handler
 	host      string
 	localhost string
@@ -38,6 +40,9 @@ type appServer struct {
 
 var audioType = map[string]string{"mp3": "audio/mpeg", "m4a": "audio/mp4", "aac": "audio/aac"}
 var singleRange = regexp.MustCompile(`^bytes=(\d{1,12}-\d{0,12}|-\d{1,12})$`)
+
+// Legacy Palm WebKit derives a distinct file origin from the installed app path.
+const palmAppOrigin = "file://.media.cryptofs.apps.usr.palm.applications.org.palmcadence.app.player"
 
 func respond(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -58,7 +63,7 @@ func (s *appServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	switch origin := req.Header.Get("Origin"); origin {
 	case "", "http://" + s.host, "http://" + s.localhost:
-	case "null", "file://":
+	case "null", "file://", palmAppOrigin:
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
 	default:
@@ -68,6 +73,10 @@ func (s *appServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	path := req.URL.Path
 	isMedia := strings.HasPrefix(path, "/media/")
+	if strings.HasPrefix(path, "/api/account/") {
+		s.serveAccount(w, req, strings.TrimPrefix(path, "/api/account/"))
+		return
+	}
 	if req.Method != http.MethodGet && !(req.Method == http.MethodHead && isMedia) &&
 		!(req.Method == http.MethodPost && path == "/api/cache") {
 		fail(w, http.StatusMethodNotAllowed, "请求方式不受支持。")
@@ -78,7 +87,7 @@ func (s *appServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	switch path {
-	case "/", "/player.css", "/player.js", "/icon.png", "/itunes-badge.gif":
+	case "/", "/player.css", "/player.js", "/account.js", "/icon.png", "/itunes-badge.gif":
 		if s.web != nil {
 			s.web.ServeHTTP(w, req)
 			return
@@ -220,6 +229,10 @@ func (s *appServer) sendMedia(w http.ResponseWriter, req *http.Request, key stri
 	s.mu.Unlock()
 	if !found || !entry.expires.After(time.Now()) {
 		fail(w, http.StatusNotFound, "播放地址已过期，请重新选择曲目。")
+		return
+	}
+	if entry.accountHash != "" && s.account.current(entry.accountHash).Cookie == "" {
+		fail(w, http.StatusUnauthorized, "网易云账号已退出。")
 		return
 	}
 	byteRange := req.Header.Get("Range")

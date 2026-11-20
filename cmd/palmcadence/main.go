@@ -23,6 +23,7 @@ func main() {
 	web := flag.String("web", "", "serve the web UI from this directory for browser development")
 	ca := flag.String("ca", "", "CA bundle on legacy webOS")
 	cacheDir := flag.String("cache", "", "directory for the local audio cache")
+	accountDir := flag.String("account-dir", "", "private directory for on-device login sessions")
 	storefront := flag.String("storefront", "US", "two-letter Apple storefront")
 	flag.Parse()
 
@@ -76,6 +77,14 @@ func main() {
 			log.Printf("audio cache unavailable: %v", err)
 		} else {
 			app.cache = cache
+		}
+	}
+	if *accountDir != "" {
+		account, err := openAccountStore(*accountDir)
+		if err != nil {
+			log.Printf("account store unavailable: %v", err)
+		} else {
+			app.account = account
 		}
 	}
 	server := &http.Server{Addr: address, Handler: &app, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192}

@@ -4,6 +4,9 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 job=/etc/event.d/palmcadence
 /sbin/stop palmcadence >/dev/null 2>&1 || :
+if [ "${1:-}" = remove ]; then
+    rm -f /media/cryptofs/apps/.palmcadence-account/netease.json
+fi
 [ -f "$job" ] || exit 0
 
 restore_read_only() {

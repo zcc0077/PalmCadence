@@ -10,6 +10,7 @@
 <div id="header" role="banner">
   <img src="icon.png" alt="" width="32" height="32">
   <h1>PalmCadence <span>掌弦</span></h1>
+  <button id="account-open" type="button" aria-label="登录网易云账号">登录</button>
   <button id="settings-button" type="button" aria-label="打开设置"><span class="settings-symbol" aria-hidden="true"></span>设置</button>
 </div>
 <form id="search">
@@ -151,13 +152,36 @@
           </div>
           <div class="settings-row action-row">
             <strong>PalmCadence</strong>
-            <span>版本 0.3.1</span>
+            <span>版本 0.4.0</span>
             <a href="https://github.com/zcc0077/PalmCadence" target="_blank" rel="noopener">开源项目 ›</a>
           </div>
         </div>
       </div>
     </div>
     <p id="settings-status" role="status"></p>
+  </div>
+</div>
+<div id="account-screen" class="settings-screen hidden" role="region" aria-labelledby="account-title">
+  <div class="settings-head">
+    <button id="account-back" type="button" class="icon-back" aria-label="返回"></button>
+    <h2 id="account-title">网易云账号</h2>
+  </div>
+  <div id="account-scroll">
+    <div id="account-home">
+      <div class="account-profile">
+        <h3 id="account-name">网易云音乐</h3>
+        <p id="account-state" role="status">用手机上的网易云音乐 App 扫码登录</p>
+        <img id="account-qr" class="hidden" width="180" height="180" alt="网易云音乐登录二维码">
+        <div class="account-actions">
+          <button id="account-login" type="button">生成登录二维码</button>
+          <button id="account-logout" class="hidden" type="button">退出登录</button>
+        </div>
+      </div>
+      <h3 id="account-library-title" class="hidden">我的歌单</h3>
+    </div>
+    <p id="account-list-status" role="status"></p>
+    <ul id="account-list"></ul>
+    <button id="account-more" class="hidden" type="button">加载更多</button>
   </div>
 </div>
 <div id="choice-layer" class="hidden">
@@ -189,6 +213,7 @@
   <a id="provider-link" class="hidden" target="_blank" rel="noopener">原平台 ›</a>
   <audio id="audio" x-palm-media-audio-class="media" preload="none"></audio>
 </div>
+<script src="account.js"></script>
 <script src="player.js"></script>
 </body>
 </html>

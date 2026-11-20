@@ -12,9 +12,13 @@ h2, p { margin: 0; }
 
 #header { position: relative; height: 54px; }
 #header img { position: absolute; left: 12px; top: 11px; border-radius: 8px; }
-h1 { margin: 0; padding: 0 72px 0 53px; font-size: 20px; line-height: 54px; letter-spacing: -.45px; white-space: nowrap; }
+h1 { margin: 0; padding: 0 126px 0 53px; font-size: 20px; line-height: 54px; letter-spacing: -.45px; white-space: nowrap; }
 h1 span { margin-left: 3px; color: #9cabb8; font-size: 11px; letter-spacing: 0; }
+#account-open { position: absolute; top: 11px; right: 78px; width: 49px; height: 32px; padding: 4px 0; color: #122720; font-size: 12px; font-weight: bold; background: #a6edca; border-color: transparent; }
 #settings-button { position: absolute; top: 11px; right: 12px; height: 32px; padding: 4px 9px; color: #c4ced6; font-size: 12px; background: #1b222c; }
+@media screen and (max-width: 360px) {
+  h1 span { display: none; }
+}
 
 #search { height: 42px; padding: 0 12px; position: relative; }
 #query { width: 100%; height: 39px; border: 1px solid #35424e; border-radius: 9px; background: #202a34; color: #f4f7f3; padding: 0 69px 0 32px; }
@@ -115,6 +119,7 @@ h1 span { margin-left: 3px; color: #9cabb8; font-size: 11px; letter-spacing: 0; 
   h1 { padding-left: 63px; font-size: 23px; line-height: 65px; }
   h1 span { font-size: 13px; }
   #settings-button { top: 16px; right: 20px; }
+  #account-open { top: 16px; right: 86px; }
   #search, #sources, .sheet { padding-left: 20px; padding-right: 20px; }
   #search button { right: 23px; }
   .magnifier { left: 32px; }
@@ -144,6 +149,7 @@ h1 span { margin-left: 3px; color: #9cabb8; font-size: 11px; letter-spacing: 0; 
   #header img { left: 25px; top: 20px; width: 36px; height: 36px; }
   h1 { line-height: 76px; padding-left: 73px; font-size: 25px; }
   #settings-button { top: 21px; right: 26px; }
+  #account-open { top: 21px; right: 92px; }
   #search, #sources, .sheet { padding-left: 25px; padding-right: 25px; }
   #search { height: 52px; }
   #query { height: 44px; padding-left: 37px; }
@@ -245,6 +251,7 @@ body.theme-light { background: #f4f3ed; color: #243b35; }
 .theme-light button { background: #f8faf5; border-color: #b2c3b8; color: #243b35; }
 .theme-light a, .theme-light .track-action { color: #28664f; }
 .theme-light #settings-button { background: #e8eee7; color: #304d40; }
+.theme-light #account-open { background: #34694f; color: #fff; }
 .theme-light h1 span, .theme-light #query::-webkit-input-placeholder, .theme-light .settings-row span,
 .theme-light .track-info, .theme-light #now-info, .theme-light #player-time, .theme-light #results-heading,
 .theme-light #search-status, .theme-light #empty-state p, .theme-light .detail p, .theme-light .tablet-track p { color: #4c6158; }
@@ -277,3 +284,34 @@ body.theme-light { background: #f4f3ed; color: #243b35; }
 .theme-light #app-menu button:active { background: #d2e7d8; }
 .settings-open #header, .settings-open #search, .settings-open #sources,
 .settings-open #results, .settings-open #tablet-now, .settings-open #now-panel, .settings-open #store-panel { visibility: hidden; }
+
+#account-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#account-screen .settings-head h2 { letter-spacing: 0; }
+#account-scroll { position: absolute; top: 57px; right: 0; bottom: 0; left: 0; overflow-y: auto; padding: 14px 12px 18px; }
+#account-home, #account-list, #account-list-status, #account-more { max-width: 700px; margin-right: auto; margin-left: auto; }
+.account-profile { padding: 15px 12px; border: 1px solid #34414d; border-radius: 10px; background: #1a242e; text-align: center; }
+.account-profile h3 { margin: 0 0 4px; word-wrap: break-word; }
+#account-state, #account-list-status { color: #b5c3ce; font-size: 12px; }
+#account-list-status:not(:empty) { margin-top: 8px; margin-bottom: 8px; }
+#account-qr { display: block; margin: 13px auto 0; border-radius: 8px; }
+.account-actions { margin-top: 10px; }
+.account-actions button, #account-more { min-height: 39px; }
+#account-login { background: #a6edca; color: #122720; border-color: transparent; }
+#account-library-title { margin: 15px 0 5px 2px; color: #a6edca; font-size: 12px; }
+#account-list { margin-top: 0; margin-bottom: 7px; padding: 0; list-style: none; }
+#account-list li { border-bottom: 1px solid #34414d; }
+.account-playlist { display: block; width: 100%; min-height: 47px; padding: 7px 27px 7px 9px; text-align: left; position: relative; border: 0; background: transparent; }
+.account-playlist:after { content: ""; position: absolute; top: 19px; right: 10px; width: 7px; height: 7px; border-top: 1px solid currentColor; border-right: 1px solid currentColor; -webkit-transform: rotate(45deg); transform: rotate(45deg); }
+#account-more { display: block; }
+.theme-light .account-profile { background: #fffdf8; border-color: #c8d5ca; }
+.theme-light #account-list li { border-color: #c8d5ca; }
+.theme-light #account-login { background: #34694f; color: #fff; }
+.theme-light #account-state, .theme-light #account-list-status { color: #4c6158; }
+.theme-light #account-library-title { color: #28664f; }
+@media screen and (min-width: 700px) {
+  #account-scroll { top: 67px; padding-top: 20px; }
+}
+@media screen and (max-height: 455px) {
+  .account-profile { padding: 9px 8px; }
+  #account-qr { width: 142px; height: 142px; margin-top: 8px; }
+}
