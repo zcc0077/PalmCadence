@@ -1,0 +1,60 @@
+html, body { height: 100%; margin: 0; }
+body { background: #141921; color: #f5f4ed; font: 14px/1.4 Arial, "PingFang SC", sans-serif; }
+html { -webkit-text-size-adjust: 100%; }
+button, input { font: inherit; -webkit-box-sizing: border-box; box-sizing: border-box; }
+button { border: 1px solid #3e4956; border-radius: 5px; background: #262f3a; color: #f5f4ed; padding: 7px 9px; cursor: pointer; }
+button:disabled { opacity: .52; cursor: default; }
+input { border: 1px solid #3e4956; border-radius: 5px; background: #0e1319; color: #f5f4ed; min-width: 0; padding: 7px 9px; }
+a { color: #9ce6c6; }
+.hidden { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+#header { height: 43px; padding: 7px 10px; -webkit-box-sizing: border-box; box-sizing: border-box; }
+#header img { float: left; margin: 1px 7px 0 0; }
+h1 { float: left; font-size: 19px; line-height: 29px; margin: 0; letter-spacing: .15px; }
+#settings-button { float: right; padding: 3px 8px; }
+#search { height: 39px; padding: 0 10px; position: relative; }
+#query { width: 100%; padding-right: 68px; height: 34px; }
+#search button { position: absolute; right: 10px; top: 0; min-width: 56px; height: 34px; background: #9ce6c6; color: #14231f; border-color: #9ce6c6; font-weight: bold; }
+#sources { height: 38px; padding: 0 8px; white-space: nowrap; text-align: center; border-bottom: 1px solid #303845; }
+#sources button { width: 19%; margin: 0; height: 31px; padding: 3px 0; border-color: transparent; background: transparent; font-size: 12px; }
+#sources .active { border-color: #4e8d78; color: #adf0d3; background: #213c36; }
+#results, #store-panel, #settings { position: absolute; top: 121px; bottom: 111px; left: 0; right: 0; overflow-y: auto; padding: 0 10px; }
+#search-status { color: #b4c0ca; margin: 12px 2px; }
+#search-status:empty { display: none; }
+#tracks { padding: 0; margin: 0; list-style: none; }
+#tracks li { border-bottom: 1px solid #303845; }
+.track { display: block; width: 100%; background: transparent; border: 0; border-radius: 0; text-align: left; padding: 8px 32px 8px 5px; position: relative; }
+.track-title, .track-info, #now-title, #now-info { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track-title { font-size: 15px; }
+.track-info, #now-info { color: #b4c0ca; font-size: 12px; }
+.track-action { position: absolute; right: 8px; top: 13px; color: #9ce6c6; }
+.track.selected { background: #20332e; }
+#more { margin: 8px 0; min-width: 110px; }
+#settings, #store-panel { background: #1c232d; padding: 12px; z-index: 2; }
+h2 { margin: 4px 0 7px; font-size: 18px; }
+#settings input { display: block; width: 100%; margin-top: 6px; }
+#settings p, #store-panel p { margin: 7px 0; color: #bdc8d2; }
+#store-badge { display: block; margin-top: 8px; }
+#store-audio { display: block; width: 100%; margin: 6px 0; }
+#player { height: 111px; position: absolute; left: 0; right: 0; bottom: 0; background: #202833; -webkit-box-sizing: border-box; box-sizing: border-box; }
+#progress { height: 10px; background: #374353; cursor: pointer; }
+#progress-fill { height: 100%; width: 0; display: block; background: #9ce6c6; }
+#playing { position: absolute; left: 11px; right: 132px; top: 16px; }
+#now-title { font-weight: bold; }
+#player-time { color: #b4c0ca; font-size: 12px; margin-top: 4px; }
+#controls { position: absolute; right: 8px; top: 21px; white-space: nowrap; }
+#controls button { padding: 6px; min-width: 30px; height: 32px; }
+#controls #toggle { min-width: 40px; }
+#player-status, #provider-link { position: absolute; left: 11px; right: 11px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#player-status { bottom: 21px; color: #d7dce3; }
+#provider-link { bottom: 4px; }
+#audio { position: absolute; width: 0; height: 0; }
+header, footer, nav, main, section { display: block; }
+@media screen and (min-width: 430px) {
+  #header, #results, #settings, #store-panel { padding-left: 16px; padding-right: 16px; }
+  #search { padding: 0 16px; }
+  #search button { right: 16px; }
+  #sources { padding: 0 15px; }
+  .track { padding-top: 11px; padding-bottom: 11px; }
+  .track-action { top: 15px; }
+}

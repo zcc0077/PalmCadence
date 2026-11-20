@@ -1,0 +1,9 @@
+{
+  "id": "org.palmcadence.app.player",
+  "version": "0.1.0",
+  "vendor": "PalmCadence",
+  "type": "web",
+  "main": "index.html",
+  "title": "PalmCadence",
+  "icon": "icon.png"
+}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1">
+<script>document.createElement("header"); document.createElement("main"); document.createElement("nav"); document.createElement("section"); document.createElement("footer");</script>
+<title>PalmCadence</title>
+<link rel="stylesheet" href="player.css">
+</head>
+<body>
+<header id="header">
+  <img src="icon.png" alt="" width="27" height="27">
+  <h1>PalmCadence</h1>
+  <button id="settings-button" type="button">连接</button>
+</header>
+<form id="search">
+  <label class="sr-only" for="query">歌曲或歌手</label>
+  <input id="query" placeholder="搜索歌曲或歌手" autocomplete="off" maxlength="80">
+  <button type="submit">搜索</button>
+</form>
+<nav id="sources" aria-label="音乐来源">
+  <button type="button" data-source="tencent">QQ 音乐</button>
+  <button type="button" data-source="netease" class="active">网易云</button>
+  <button type="button" data-source="kuwo">酷我</button>
+  <button type="button" data-source="kugou">酷狗</button>
+  <button type="button" data-source="apple">Apple</button>
+</nav>
+<main id="results">
+  <p id="search-status" role="status">输入歌名或歌手开始搜索。</p>
+  <ul id="tracks"></ul>
+  <button id="more" type="button" class="hidden">加载更多</button>
+</main>
+<section id="store-panel" class="hidden" aria-label="Apple Music 曲目">
+  <button id="store-close" type="button">返回列表</button>
+  <h2 id="store-title"></h2>
+  <p id="store-artist"></p>
+  <a id="store-link" target="_blank" rel="noopener">在 Apple Music 打开</a>
+  <p id="store-preview-info" class="hidden">试听由 iTunes 提供</p>
+  <a id="store-badge" class="hidden" target="_blank" rel="noopener"><img src="itunes-badge.gif" alt="Download on iTunes" width="110" height="40"></a>
+  <audio id="store-audio" class="hidden" preload="none" controls controlslist="nodownload"></audio>
+  <p id="store-status" role="status"></p>
+</section>
+<form id="settings" class="hidden">
+  <h2>连接音乐服务</h2>
+  <label for="server">Mac 上的服务地址</label>
+  <input id="server" placeholder="http://10.0.2.2:8787" autocapitalize="off" autocomplete="off">
+  <p>真机和 Mac 连到同一 Wi-Fi，填写 Mac 的局域网地址。</p>
+  <button type="submit">测试并保存</button>
+  <button id="settings-close" type="button">取消</button>
+  <p id="connection-status" role="status"></p>
+</form>
+<footer id="player">
+  <div id="progress" role="slider" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"><span id="progress-fill"></span></div>
+  <div id="playing">
+    <div id="now-title">未播放</div>
+    <div id="now-info"></div>
+    <div id="player-time">0:00 / 0:00</div>
+  </div>
+  <div id="controls">
+    <button id="previous" type="button" aria-label="上一首" disabled>◀</button>
+    <button id="toggle" type="button" disabled>播放</button>
+    <button id="next" type="button" aria-label="下一首" disabled>▶</button>
+  </div>
+  <div id="player-status" role="status"></div>
+  <a id="provider-link" class="hidden" target="_blank" rel="noopener">在原平台打开</a>
+  <audio id="audio" preload="none"></audio>
+</footer>
+<script src="player.js"></script>
+</body>
+</html>
