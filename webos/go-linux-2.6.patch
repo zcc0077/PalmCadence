@@ -1,0 +1,132 @@
+--- a/src/internal/runtime/syscall/linux/syscall_linux.go
++++ b/src/internal/runtime/syscall/linux/syscall_linux.go
+@@ -17,6 +17,14 @@
+ 
+ func EpollCreate1(flags int32) (fd int32, errno uintptr) {
+ 	r1, _, e := Syscall6(SYS_EPOLL_CREATE1, uintptr(flags), 0, 0, 0, 0, 0)
++	if legacy386orARM() && e == 38 { // ENOSYS
++		number := uintptr(250) // ARM epoll_create
++		if goarch.GOARCH == "386" {
++			number = 254
++		}
++		r1, _, e = Syscall6(number, 1, 0, 0, 0, 0, 0)
++		r1, e = legacyPollFlags(r1, e, false)
++	}
+ 	return int32(r1), e
+ }
+ 
+@@ -40,9 +48,37 @@
+ 
+ func Eventfd(initval, flags int32) (fd int32, errno uintptr) {
+ 	r1, _, e := Syscall6(SYS_EVENTFD2, uintptr(initval), uintptr(flags), 0, 0, 0, 0)
++	if legacy386orARM() && e == 38 { // ENOSYS
++		number := uintptr(351) // ARM eventfd
++		if goarch.GOARCH == "386" {
++			number = 323
++		}
++		r1, _, e = Syscall6(number, uintptr(initval), 0, 0, 0, 0, 0)
++		r1, e = legacyPollFlags(r1, e, true)
++	}
+ 	return int32(r1), e
+ }
+ 
++// webOS 1.x and 2.x use Linux 2.6.26, before the atomic flag syscalls.
++func legacy386orARM() bool {
++	return goarch.GOARCH == "386" || goarch.GOARCH == "arm"
++}
++
++func legacyPollFlags(fd, errno uintptr, nonblock bool) (uintptr, uintptr) {
++	if errno != 0 {
++		return fd, errno
++	}
++	const fcntl = 55
++	_, _, errno = Syscall6(fcntl, fd, 2, 1, 0, 0, 0) // F_SETFD, FD_CLOEXEC
++	if errno == 0 && nonblock {
++		_, _, errno = Syscall6(fcntl, fd, 4, 2048, 0, 0, 0) // F_SETFL, O_NONBLOCK
++	}
++	if errno != 0 {
++		Close(int(fd))
++	}
++	return fd, errno
++}
++
+ func Open(path *byte, mode int, perm uint32) (fd int, errno uintptr) {
+ 	// Use SYS_OPENAT to match the syscall package.
+ 	dfd := AT_FDCWD
+--- a/src/net/sock_cloexec.go
++++ b/src/net/sock_cloexec.go
+@@ -10,6 +10,7 @@
+ package net
+ 
+ import (
++	"internal/poll"
+ 	"os"
+ 	"syscall"
+ )
+@@ -18,6 +19,20 @@
+ // descriptor as nonblocking and close-on-exec.
+ func sysSocket(family, sotype, proto int) (int, error) {
+ 	s, err := socketFunc(family, sotype|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, proto)
++	if err == syscall.EINVAL || err == syscall.EPROTONOSUPPORT {
++		syscall.ForkLock.RLock()
++		s, err = socketFunc(family, sotype, proto)
++		if err == nil {
++			syscall.CloseOnExec(s)
++		}
++		syscall.ForkLock.RUnlock()
++		if err == nil {
++			if err = syscall.SetNonblock(s, true); err != nil {
++				poll.CloseFunc(s)
++				return -1, os.NewSyscallError("setnonblock", err)
++			}
++		}
++	}
+ 	if err != nil {
+ 		return -1, os.NewSyscallError("socket", err)
+ 	}
+--- a/src/syscall/syscall_linux_386.go
++++ b/src/syscall/syscall_linux_386.go
+@@ -126,6 +126,20 @@
+ 
+ func accept4(s int, rsa *RawSockaddrAny, addrlen *_Socklen, flags int) (fd int, err error) {
+ 	fd, e := socketcall(_ACCEPT4, uintptr(s), uintptr(unsafe.Pointer(rsa)), uintptr(unsafe.Pointer(addrlen)), uintptr(flags), 0, 0)
++	if e == ENOSYS || e == EINVAL {
++		fd, e = socketcall(_ACCEPT, uintptr(s), uintptr(unsafe.Pointer(rsa)), uintptr(unsafe.Pointer(addrlen)), 0, 0, 0)
++		if e == 0 {
++			if flags&SOCK_CLOEXEC != 0 {
++				CloseOnExec(fd)
++			}
++			if flags&SOCK_NONBLOCK != 0 {
++				if err = SetNonblock(fd, true); err != nil {
++					Close(fd)
++					return -1, err
++				}
++			}
++		}
++	}
+ 	if e != 0 {
+ 		err = e
+ 	}
+--- a/src/syscall/zsyscall_linux_arm.go
++++ b/src/syscall/zsyscall_linux_arm.go
+@@ -1088,6 +1088,20 @@
+ 
+ func accept4(s int, rsa *RawSockaddrAny, addrlen *_Socklen, flags int) (fd int, err error) {
+ 	r0, _, e1 := Syscall6(SYS_ACCEPT4, uintptr(s), uintptr(unsafe.Pointer(rsa)), uintptr(unsafe.Pointer(addrlen)), uintptr(flags), 0, 0)
++	if e1 == ENOSYS || e1 == EINVAL {
++		r0, _, e1 = Syscall(SYS_ACCEPT, uintptr(s), uintptr(unsafe.Pointer(rsa)), uintptr(unsafe.Pointer(addrlen)))
++		if e1 == 0 {
++			if flags&SOCK_CLOEXEC != 0 {
++				CloseOnExec(int(r0))
++			}
++			if flags&SOCK_NONBLOCK != 0 {
++				if err = SetNonblock(int(r0), true); err != nil {
++					Close(int(r0))
++					return -1, err
++				}
++			}
++		}
++	}
+ 	fd = int(r0)
+ 	if e1 != 0 {
+ 		err = errnoErr(e1)

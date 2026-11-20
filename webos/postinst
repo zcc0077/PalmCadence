@@ -1,0 +1,38 @@
+#!/bin/sh
+set -e
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+app=/media/cryptofs/apps/usr/palm/applications/org.palmcadence.app.player
+job=/etc/event.d/palmcadence
+new_job=/etc/event.d/.palmcadence.$$
+case "$(uname -m)" in
+    arm*) cpu=arm ;;
+    i?86) cpu=i686 ;;
+    *) echo "Unsupported PalmCadence CPU." >&2; exit 1 ;;
+esac
+[ -x "$app/native/palmcadence-$cpu" ]
+
+restore_read_only() {
+    if [ -f "$new_job" ]; then rm -f "$new_job"; fi
+    if [ "$root_read_only" = 1 ]; then
+        mount -o remount,ro /
+    fi
+}
+root_read_only=0
+if awk '$2 == "/" && $4 ~ /(^|,)ro(,|$)/ { found=1 } END { exit !found }' /proc/mounts; then
+    mount -o remount,rw /
+    root_read_only=1
+fi
+trap restore_read_only EXIT
+trap 'exit 1' HUP INT TERM
+
+/sbin/stop palmcadence >/dev/null 2>&1 || :
+install -m 0644 "$app/native/palmcadence.upstart" "$new_job"
+mv -f "$new_job" "$job"
+# Upstart 0.3 watches /etc/event.d for new jobs. Wait for registration.
+attempt=0
+until /sbin/start palmcadence; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 5 ] || exit 1
+    sleep 1
+done

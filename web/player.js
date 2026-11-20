@@ -8,29 +8,42 @@
   var storeAudio = byId('store-audio');
   var sourceNames = { tencent: 'QQ 音乐', netease: '网易云', kuwo: '酷我', kugou: '酷狗', apple: 'Apple Music' };
   var source = 'netease';
-  var origin = /^https?:$/.test(location.protocol) ? location.protocol + '//' + location.host : 'http://10.0.2.2:8787';
-  var base = origin;
+  var origin = /^https?:$/.test(location.protocol) ? location.protocol + '//' + location.host : 'http://127.0.0.1:8787';
   var tracks = [];
   var queue = [];
   var currentIndex = -1;
   var searchVersion = 0;
   var playbackVersion = 0;
   var storeVersion = 0;
+  var playbackWatchdog;
   var page = 1;
   var hasMore = false;
   var keyword = '';
   var requested = false;
   var mediaPath = '';
 
-  try { base = localStorage.getItem('music-server') || origin; } catch (error) {}
-  function visible(node, show) { node.className = show ? '' : 'hidden'; }
-  function message(id, text) { byId(id).textContent = text; }
+  function visible(node, show) {
+    var classes = (node.className || '').replace(/(^|\s)hidden(?=\s|$)/g, '').replace(/^\s+|\s+$/g, '');
+    node.className = show ? classes : classes + ' hidden';
+  }
+  function message(id, text) {
+    byId(id).textContent = text;
+    if (id === 'player-status') { byId('detail-status').textContent = text; }
+    if (id === 'search-status') { visible(byId(id), Boolean(text)); }
+  }
+  function playing(yes) {
+    var toggle = byId('toggle');
+    var label = yes ? '暂停' : '播放';
+    toggle.className = yes ? 'is-playing' : '';
+    toggle.setAttribute('aria-label', label);
+    toggle.title = label;
+  }
 
-  function get(server, path, callback) {
+  function get(path, callback) {
     var xhr = new XMLHttpRequest();
     var done = false;
     var timer = setTimeout(function () {
-      complete('连接超时，请检查音乐服务。');
+      complete('连接超时，请检查网络。');
       xhr.abort();
     }, 15000);
     function complete(error, data) {
@@ -40,16 +53,16 @@
       callback(error, data);
     }
     try {
-      xhr.open('GET', server + path, true);
+      xhr.open('GET', origin + path, true);
       xhr.onreadystatechange = function () {
         var data;
         if (xhr.readyState !== 4 || done) { return; }
         if (!xhr.status) {
-          complete('无法连接到音乐服务。');
+          complete('无法连接到本机播放组件。');
           return;
         }
         try { data = JSON.parse(xhr.responseText); }
-        catch (error) { complete('音乐服务响应无法读取。'); return; }
+        catch (error) { complete('无法读取曲目数据。'); return; }
         if (xhr.status !== 200) {
           complete(data.message || '请求失败。');
           return;
@@ -58,7 +71,7 @@
       };
       xhr.send();
     } catch (error) {
-      complete('无法连接到音乐服务。');
+      complete('无法连接到本机播放组件。');
     }
   }
 
@@ -68,19 +81,23 @@
     element.load();
   }
 
-  function closeStore() {
-    storeVersion += 1;
-    visible(byId('store-panel'), false);
-    visible(byId('results'), true);
-    resetAudio(storeAudio);
+  function showPanel(panel) {
+    if (panel !== 'store-panel') {
+      storeVersion += 1;
+      resetAudio(storeAudio);
+    }
+    document.body.className = panel === 'results' ? 'show-library' : '';
+    visible(byId('player'), panel !== 'store-panel');
+    ['results', 'store-panel', 'now-panel', 'settings'].forEach(function (name) {
+      visible(byId(name), name === panel);
+    });
   }
 
   function showStore(track) {
     var version = ++storeVersion;
     audio.pause();
     resetAudio(storeAudio);
-    visible(byId('results'), false);
-    visible(byId('store-panel'), true);
+    showPanel('store-panel');
     visible(byId('store-audio'), false);
     visible(byId('store-preview-info'), false);
     visible(byId('store-badge'), false);
@@ -88,15 +105,20 @@
     message('store-artist', track.artist + (track.album ? ' · ' + track.album : ''));
     message('store-status', '');
     byId('store-link').href = track.url;
-    if (!track.preview) { return; }
-    get(base, '/api/play?source=apple&id=' + encodeURIComponent(track.id), function (error, data) {
+    if (!track.preview) {
+      message('store-status', '此曲目没有试听音频。');
+      return;
+    }
+    message('store-status', '正在加载试听…');
+    get('/api/play?source=apple&id=' + encodeURIComponent(track.id), function (error, data) {
       if (version !== storeVersion) { return; }
       if (error) { message('store-status', error); return; }
+      message('store-status', '');
       byId('store-badge').href = track.url;
       visible(byId('store-preview-info'), true);
       visible(byId('store-badge'), true);
       visible(byId('store-audio'), true);
-      storeAudio.src = base + data.path;
+      storeAudio.src = origin + data.path;
     });
   }
 
@@ -125,6 +147,11 @@
     tracks.forEach(function (track, index) {
       var row = document.createElement('li');
       var button = document.createElement('button');
+      var artwork = document.createElement('span');
+      artwork.className = 'track-art';
+      artwork.setAttribute('aria-hidden', 'true');
+      artwork.setAttribute('data-source', track.source);
+      button.appendChild(artwork);
       button.type = 'button';
       button.className = current && current.id === track.id && current.source === track.source ? 'track selected' : 'track';
       appendText(button, 'span', 'track-title', track.title);
@@ -143,12 +170,14 @@
     });
     list.appendChild(fragment);
     visible(byId('more'), hasMore && !requested);
+    visible(byId('empty-state'), !keyword);
+    visible(byId('results-heading'), Boolean(tracks.length));
   }
 
   function search(reset) {
     var version, nextPage, q;
     if (reset) {
-      closeStore();
+      showPanel('results');
       keyword = query.value.replace(/^\s+|\s+$/g, '');
       tracks = [];
       page = 1;
@@ -160,9 +189,9 @@
     nextPage = reset ? 1 : page + 1;
     requested = Boolean(q);
     renderTracks();
-    if (!q) { message('search-status', '输入歌名或歌手开始搜索。'); return; }
+    if (!q) { message('search-status', ''); return; }
     message('search-status', '正在搜索 ' + sourceNames[source] + '…');
-    get(base, '/api/search?source=' + source + '&q=' + encodeURIComponent(q) + '&page=' + nextPage, function (error, data) {
+    get('/api/search?source=' + source + '&q=' + encodeURIComponent(q) + '&page=' + nextPage, function (error, data) {
       if (version !== searchVersion) { return; }
       requested = false;
       if (error) {
@@ -189,7 +218,9 @@
     var percent = duration > 0 && isFinite(current) ? Math.min(100, Math.round(current * 100 / duration)) : 0;
     byId('progress-fill').style.width = percent + '%';
     byId('progress').setAttribute('aria-valuenow', percent);
-    message('player-time', formatTime(current) + ' / ' + formatTime(duration));
+    var timeLabel = formatTime(current) + ' / ' + formatTime(duration);
+    byId('progress').setAttribute('aria-valuetext', timeLabel);
+    message('player-time', timeLabel);
   }
 
   function playAudio() {
@@ -208,9 +239,10 @@
 
   function playAt(index) {
     var track = queue[index];
-    var version;
+    var version, details;
     if (!track) { return; }
     version = ++playbackVersion;
+    clearTimeout(playbackWatchdog);
     currentIndex = index;
     mediaPath = '';
     resetAudio(audio);
@@ -219,68 +251,54 @@
     visible(byId('provider-link'), true);
     message('now-title', track.title);
     message('now-info', track.artist + ' · ' + sourceNames[track.source]);
-    message('toggle', '播放');
+    details = track.artist + (track.album ? ' · ' + track.album : '') + ' · ' + sourceNames[track.source];
+    message('detail-title', track.title);
+    message('detail-info', details);
+    message('tablet-title', track.title);
+    message('tablet-info', details);
+    byId('now-art').setAttribute('data-source', track.source);
+    byId('playing').disabled = false;
+    playing(false);
     message('player-status', '正在获取音源…');
     byId('toggle').disabled = true;
     byId('previous').disabled = index === 0;
     byId('next').disabled = index >= queue.length - 1;
     renderTracks();
-    get(base, '/api/play?source=' + track.source + '&id=' + encodeURIComponent(track.id), function (error, data) {
+    get('/api/play?source=' + track.source + '&id=' + encodeURIComponent(track.id), function (error, data) {
       if (version !== playbackVersion) { return; }
       if (error) { message('player-status', error); return; }
       mediaPath = data.path;
-      audio.src = base + mediaPath;
+      audio.src = origin + mediaPath;
+      audio.load();
       byId('toggle').disabled = false;
       message('player-status', '正在缓冲…');
       playAudio();
+      playbackWatchdog = setTimeout(function () {
+        if (version === playbackVersion && audio.readyState < 2 &&
+            byId('player-status').textContent === '正在缓冲…') {
+          message('player-status', '音频未能开始，可重试或打开原平台。');
+        }
+      }, 18000);
     });
   }
 
   byId('search').onsubmit = function () { query.blur(); search(true); return false; };
   byId('more').onclick = function () { search(false); };
-  byId('store-close').onclick = closeStore;
-  byId('settings-button').onclick = function () {
-    closeStore();
-    byId('server').value = base;
-    message('connection-status', '');
-    visible(byId('results'), false);
-    visible(byId('settings'), true);
+  byId('store-close').onclick = byId('now-close').onclick = byId('settings-close').onclick = function () {
+    showPanel('results');
   };
-  byId('settings-close').onclick = function () {
-    visible(byId('settings'), false);
-    visible(byId('results'), true);
+  byId('playing').onclick = function () {
+    var panel = byId('now-panel');
+    showPanel(panel.className.indexOf('hidden') === -1 ? 'results' : 'now-panel');
   };
-  byId('settings').onsubmit = function () {
-    var entered = byId('server').value.replace(/^\s+|\s+$/g, '').replace(/\/$/, '');
-    if (!/^https?:\/\/[a-z0-9.-]+(?::\d{1,5})?$/i.test(entered)) {
-      message('connection-status', '请输入 http://地址:端口。');
-      return false;
-    }
-    message('connection-status', '连接中…');
-    get(entered, '/api/health', function (error, data) {
-      if (error || !data.ok) { message('connection-status', error || '服务无响应。'); return; }
-      if (base !== entered) {
-        playbackVersion += 1;
-        mediaPath = '';
-        resetAudio(audio);
-        updateProgress();
-        queue = [];
-        currentIndex = -1;
-        byId('previous').disabled = true;
-        byId('next').disabled = true;
-        byId('toggle').disabled = true;
-        visible(byId('provider-link'), false);
-        message('now-title', '未播放');
-        message('now-info', '');
-        message('player-status', '');
-      }
-      base = entered;
-      try { localStorage.setItem('music-server', base); } catch (exception) {}
-      byId('settings-close').onclick();
-      search(true);
+  function checkConnection() {
+    message('connection-status', '正在检查本机播放组件…');
+    get('/api/health', function (error, data) {
+      message('connection-status', error || (data.ok ? '本机播放组件已就绪。' : '本机播放组件未就绪。'));
     });
-    return false;
-  };
+  }
+  byId('settings-button').onclick = function () { showPanel('settings'); checkConnection(); };
+  byId('settings-retry').onclick = checkConnection;
   byId('toggle').onclick = function () { if (audio.paused) { playAudio(); } else { audio.pause(); } };
   byId('previous').onclick = function () { playAt(currentIndex - 1); };
   byId('next').onclick = function () { playAt(currentIndex + 1); };
@@ -298,10 +316,10 @@
   };
   audio.addEventListener('timeupdate', updateProgress, false);
   audio.addEventListener('durationchange', updateProgress, false);
-  audio.addEventListener('playing', function () { message('toggle', '暂停'); message('player-status', ''); }, false);
-  audio.addEventListener('pause', function () { message('toggle', '播放'); }, false);
+  audio.addEventListener('playing', function () { playing(true); message('player-status', ''); }, false);
+  audio.addEventListener('pause', function () { playing(false); }, false);
   audio.addEventListener('ended', function () {
-    message('toggle', '播放');
+    playing(false);
     if (currentIndex + 1 < queue.length) { playAt(currentIndex + 1); }
   }, false);
   audio.addEventListener('error', function () {
@@ -319,5 +337,10 @@
     };
   }
   updateTabs();
-  if (window.PalmSystem && window.PalmSystem.stageReady) { window.PalmSystem.stageReady(); }
+  if (window.PalmSystem) {
+    if (window.innerWidth >= 700 && window.PalmSystem.setWindowOrientation) {
+      window.PalmSystem.setWindowOrientation('free');
+    }
+    if (window.PalmSystem.stageReady) { window.PalmSystem.stageReady(); }
+  }
 }());

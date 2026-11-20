@@ -1,0 +1,16 @@
+start on stopped finish
+stop on runlevel [016]
+respawn
+
+script
+    app=/media/cryptofs/apps/usr/palm/applications/org.palmcadence.app.player
+    case "$(uname -m)" in
+        arm*) cpu=arm ;;
+        i?86) cpu=i686 ;;
+        *) exit 0 ;;
+    esac
+    [ -x "$app/native/palmcadence-$cpu" ] || exit 0
+    # Upstart supervises the process, and the process itself has no root privileges.
+    export GOMAXPROCS=2 GOMEMLIMIT=24MiB GODEBUG=netdns=go
+    exec /bin/su -p -s /bin/sh -c "exec $app/native/palmcadence-$cpu -ca $app/native/ca.pem" nobody
+end script

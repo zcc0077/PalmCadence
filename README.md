@@ -1,43 +1,46 @@
 # 掌弦 · PalmCadence
 
-给 Palm webOS 做的多音源播放器。在同一界面切换 QQ 音乐、网易云音乐、酷我、酷狗和 Apple Music，搜索歌曲和歌手。
+给 Palm webOS 做的多音源播放器。搜歌、切换平台，也可以边浏览边播放。
+
+支持 Pre、Pre 2、Pre 3、Pixi、Veer 的三种屏幕尺寸。TouchPad 横竖屏使用双栏，搜索结果和当前曲目同时显示。
+
+## 界面截图
+
+按对应分辨率在浏览器截取。
+
+| 320×400 · Veer / Pixi | 320×480 · Pre / Pre 2 | 480×800 · Pre 3 |
+| --- | --- | --- |
+| <img src="screenshots/320x400.png" width="180" alt="Veer 和 Pixi 上的搜索与播放界面"> | <img src="screenshots/320x480.png" width="180" alt="Pre 和 Pre 2 上的搜索与播放界面"> | <img src="screenshots/480x800.png" width="240" alt="Pre 3 上的搜索与播放界面"> |
+
+| 768×1024 · TouchPad 竖屏 | 1024×768 · TouchPad 横屏 |
+| --- | --- |
+| <img src="screenshots/768x1024.png" width="320" alt="TouchPad 竖屏双栏界面"> | <img src="screenshots/1024x768.png" width="420" alt="TouchPad 横屏双栏界面"> |
 
 ## 音源
 
-| 音源 | 0.1.0 实测 |
+| 音源 | 0.2.0 实测 |
 | --- | --- |
-| 网易云音乐 | 搜索，播放平台返回的音频 |
-| QQ 音乐、酷我、酷狗 | 搜索，打开原曲页面。测试曲目未返回可播地址 |
-| Apple Music | 搜索，曲目详情页试听，打开官方曲目页面 |
+| 网易云音乐、酷我、酷狗 | 搜索，播放平台提供的游客音源 |
+| QQ 音乐 | 搜索，打开原曲页面。测试曲目未返回游客音源 |
+| Apple Music | 搜索，播放 iTunes 提供的试听，默认美区 |
 
-## 启动
+## 安装
 
-需要 Node.js 22 或更新版本。
+把 `org.palmcadence.app.player_0.2.0_all.ipk` 通过 [Preware](https://github.com/webos-internals/preware) 安装到 webOS。IPK 内含 ARM 和模拟器版本，以及处理 HTTPS 的本机组件。设备联网后即可搜索和播放，无需在电脑上启动服务。
 
-```sh
-npm ci
-npm start
-```
+## 开发
 
-打开 `http://127.0.0.1:8787` 就能在电脑上试用。
-
-## 装到 webOS
-
-界面覆盖 Pre、Pre 2、Pre 3、Pixi、Veer 的三种尺寸（320×400、320×480、480×800），客户端以 webOS 1.4.5 为兼容目标。
-
-用 [Palm SDK](https://sdk.webosarchive.org/) 打包和安装。真机安装前开启开发者模式。
+构建需要 Go、Python 3、`curl`、`patch` 和 `ar`。
 
 ```sh
-palm-package --use-v1-format web
-palm-install org.palmcadence.app.player_0.1.0_all.ipk
+go run ./cmd/palmcadence -web web
+./scripts/package-webos.sh
 ```
 
-真机和电脑连同一个 Wi-Fi，在电脑运行 `HOST=0.0.0.0 npm start`，点 App 右上角「连接」，填 `http://电脑的局域网地址:8787`。使用默认 QEMU 用户模式网络的模拟器可填 `http://10.0.2.2:8787`。
-
-系统音源请求由电脑上的服务完成，老 webOS 通过 HTTP 接收搜索结果和音频。Apple 曲目搜索默认使用美区目录，可用 `APPLE_STOREFRONT` 切换。
+浏览器预览地址是 `http://127.0.0.1:8787`，IPK 输出到 `dist/`。打包脚本使用 Go 1.26.11，并加入 Linux 2.6.26 所需的系统调用兼容层。
 
 ## 参考
 
 [AlgerMusicPlayer](https://github.com/algerkong/algermusicplayer) · [Folia](https://github.com/chthollyphile/folia-major) · [见音](https://github.com/qianqianhhh2/jianyin) · [Meting](https://github.com/metowolf/Meting)
 
-代码采用 [MIT](LICENSE) 许可。iTunes 徽标由 Apple 提供。
+[MIT](LICENSE) · iTunes 徽标由 Apple 提供。
