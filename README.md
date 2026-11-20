@@ -28,16 +28,15 @@
 
 把 `org.palmcadence.app.player_0.2.1_all.ipk` 通过 [Preware](https://github.com/webos-internals/preware) 安装到 webOS。IPK 内含 ARM 和模拟器版本，以及处理 HTTPS 的本机组件。设备联网后即可搜索和播放，无需在电脑上启动服务。
 
-## 开发
+## 从源码打包
 
 构建需要 Go、Python 3、`curl`、`patch` 和 `ar`。
 
 ```sh
-go run ./cmd/palmcadence -web web
 ./scripts/package-webos.sh
 ```
 
-浏览器预览地址是 `http://127.0.0.1:8787`，IPK 输出到 `dist/`。打包脚本使用 Go 1.26.11，并加入 Linux 2.6.26 所需的系统调用兼容层。
+IPK 输出到 `dist/`。打包脚本使用 Go 1.26.11，并加入 Linux 2.6.26 所需的系统调用兼容层。
 
 ## 参考
 
