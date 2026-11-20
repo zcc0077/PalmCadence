@@ -27,6 +27,10 @@ trap restore_read_only EXIT
 trap 'exit 1' HUP INT TERM
 
 /sbin/stop palmcadence >/dev/null 2>&1 || :
+cache=/media/cryptofs/apps/.palmcadence-cache
+if [ ! -d "$cache" ]; then
+    (umask 077; mkdir "$cache" && chown nobody "$cache") || echo "Unable to initialize audio cache." >&2
+fi
 install -m 0644 "$app/native/palmcadence.upstart" "$new_job"
 mv -f "$new_job" "$job"
 # Upstart 0.3 watches /etc/event.d for new jobs. Wait for registration.

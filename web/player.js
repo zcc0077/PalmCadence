@@ -8,7 +8,7 @@
   var storeAudio = byId('store-audio');
   var sourceNames = { tencent: 'QQ 音乐', netease: '网易云', kuwo: '酷我', kugou: '酷狗', apple: 'Apple Music' };
   var preferenceKey = 'palmcadence.preferences';
-  var defaults = { startupSource: 'last', lastSource: 'netease', mode: 'sequence', theme: 'dark', region: 'US' };
+  var defaults = { startupSource: 'last', lastSource: 'netease', mode: 'sequence', theme: 'dark', region: 'US', fade: 'off' };
   var playbackHelp = {
     sequence: '播到列表末尾后停止',
     'repeat-all': '列表结束后从第一首重新播放',
@@ -18,6 +18,7 @@
   var fields = {
     'startup-source': { key: 'startupSource', allowed: ['last', 'netease', 'tencent', 'kuwo', 'kugou', 'apple'] },
     'playback-mode': { key: 'mode', allowed: ['sequence', 'repeat-all', 'repeat-one', 'stop'] },
+    fade: { key: 'fade', allowed: ['off', 'on'] },
     theme: { key: 'theme', allowed: ['dark', 'light'] },
     'apple-region': { key: 'region', allowed: ['US', 'CN', 'HK', 'TW', 'JP'] }
   };
@@ -28,6 +29,11 @@
   var menuOpen = false;
   var activeChoice;
   var choiceButtons = {};
+  var cacheRefresh;
+  var cacheRead = 0;
+  var cacheRevision = 0;
+  var cacheBusy = false;
+  var cacheReady = false;
   var sleepDeadline = 0;
   var sleepAlarm;
   var resumeWhenReady = true;
@@ -45,6 +51,8 @@
   var requested = false;
   var mediaPath = '';
   var searchRegion = preferences.region;
+  var trackFade = mediaFade(audio);
+  var previewFade = mediaFade(storeAudio);
 
   function readPreferences() {
     var data;
@@ -93,7 +101,7 @@
     toggle.title = label;
   }
 
-  function get(path, callback) {
+  function get(path, callback, method) {
     var xhr = new XMLHttpRequest();
     var done = false;
     var timer = setTimeout(function () {
@@ -107,7 +115,7 @@
       callback(error, data);
     }
     try {
-      xhr.open('GET', origin + path, true);
+      xhr.open(method || 'GET', origin + path, true);
       xhr.onreadystatechange = function () {
         var data;
         if (xhr.readyState !== 4 || done) { return; }
@@ -129,7 +137,77 @@
     }
   }
 
-  function resetAudio(element) {
+  function setVolume(element, value) {
+    try { element.volume = value; return element.volume === value; }
+    catch (error) { return false; }
+  }
+
+  function mediaFade(element) {
+    var ceiling = 1;
+    var timer;
+    var waiting = false;
+    var pausing = false;
+
+    function cancel(restore) {
+      clearInterval(timer);
+      timer = null;
+      waiting = false;
+      pausing = false;
+      if (restore) { setVolume(element, ceiling); }
+    }
+
+    function ramp(target, pauseAtEnd) {
+      var from = element.volume;
+      var started = Date.now();
+      cancel(false);
+      pausing = pauseAtEnd;
+      timer = setInterval(function () {
+        var progress = Math.min(1, (Date.now() - started) / 350);
+        if (!setVolume(element, from + (target - from) * progress) || progress === 1) {
+          if (pauseAtEnd) { element.pause(); }
+          cancel(true);
+        }
+      }, 35);
+    }
+
+    element.addEventListener('playing', function () {
+      if (waiting) { ramp(ceiling, false); }
+    }, false);
+    ['pause', 'ended', 'error'].forEach(function (name) {
+      element.addEventListener(name, function () {
+        if (waiting || timer) { cancel(true); }
+      }, false);
+    });
+
+    return {
+      play: function () {
+        if (pausing && !element.paused) { ramp(ceiling, false); return; }
+        if (element.paused && preferences.fade === 'on') {
+          ceiling = element.volume;
+          waiting = ceiling > 0 && setVolume(element, 0);
+        }
+        return element.play();
+      },
+      pause: function () {
+        if (pausing) { return; }
+        if (!element.paused && preferences.fade === 'on' && element.volume > 0) {
+          if (!waiting && !timer) { ceiling = element.volume; }
+          ramp(0, true);
+          return;
+        }
+        element.pause();
+        if (waiting || timer) { cancel(true); }
+      },
+      shouldPlay: function () { return element.paused || pausing; },
+      reset: function () {
+        if (pausing) { element.pause(); }
+        if (waiting || timer) { cancel(true); }
+      }
+    };
+  }
+
+  function resetAudio(element, fade) {
+    fade.reset();
     element.pause();
     element.removeAttribute('src');
     element.load();
@@ -138,7 +216,7 @@
   function showPanel(next) {
     if (panel === 'store-panel' && next !== panel) {
       storeVersion += 1;
-      resetAudio(storeAudio);
+      resetAudio(storeAudio, previewFade);
     }
     panel = next;
     syncLayout();
@@ -150,10 +228,12 @@
 
   function showStore(track) {
     var version = ++storeVersion;
+    trackFade.reset();
     audio.pause();
-    resetAudio(storeAudio);
+    resetAudio(storeAudio, previewFade);
     showPanel('store-panel');
-    visible(byId('store-audio'), false);
+    visible(byId('store-controls'), false);
+    updateStoreProgress();
     visible(byId('store-preview-info'), false);
     visible(byId('store-badge'), false);
     message('store-title', track.title);
@@ -172,7 +252,7 @@
       byId('store-badge').href = track.url;
       visible(byId('store-preview-info'), true);
       visible(byId('store-badge'), true);
-      visible(byId('store-audio'), true);
+      visible(byId('store-controls'), true);
       storeAudio.src = origin + data.path;
     });
   }
@@ -273,30 +353,39 @@
     return Math.floor(seconds / 60) + ':' + (remainder < 10 ? '0' : '') + remainder;
   }
 
-  function updateProgress() {
-    var duration = mediaPath && isFinite(audio.duration) ? audio.duration : 0;
-    var current = mediaPath ? audio.currentTime : 0;
+  function renderProgress(id, timeId, element, ready) {
+    var duration = ready && isFinite(element.duration) ? element.duration : 0;
+    var current = ready ? element.currentTime : 0;
     var percent = duration > 0 && isFinite(current) ? Math.min(100, Math.round(current * 100 / duration)) : 0;
-    byId('progress-fill').style.width = percent + '%';
-    byId('progress').setAttribute('aria-valuenow', percent);
+    byId(id + '-fill').style.width = percent + '%';
+    byId(id).setAttribute('aria-valuenow', percent);
     var timeLabel = formatTime(current) + ' / ' + formatTime(duration);
-    byId('progress').setAttribute('aria-valuetext', timeLabel);
-    message('player-time', timeLabel);
+    byId(id).setAttribute('aria-valuetext', timeLabel);
+    message(timeId, timeLabel);
   }
 
-  function playAudio() {
+  function updateProgress() { renderProgress('progress', 'player-time', audio, Boolean(mediaPath)); }
+  function updateStoreProgress() { renderProgress('store-progress', 'store-time', storeAudio, Boolean(storeAudio.getAttribute('src'))); }
+
+  function playMedia(fade, status) {
     var promise;
     try {
-      promise = audio.play();
+      promise = fade.play();
       if (promise && promise.then) {
         promise.then(null, function (error) {
-          if (error.name === 'NotAllowedError') { message('player-status', '点「播放」开始。'); }
+          if (error.name === 'NotAllowedError') {
+            fade.reset();
+            message(status, '点「播放」开始。');
+          }
         });
       }
     } catch (error) {
-      message('player-status', '当前设备无法播放此音频。');
+      fade.reset();
+      message(status, '当前设备无法播放此音频。');
     }
   }
+
+  function playAudio() { playMedia(trackFade, 'player-status'); }
 
   function playAt(index) {
     var track = queue[index];
@@ -307,7 +396,7 @@
     clearTimeout(playbackWatchdog);
     currentIndex = index;
     mediaPath = '';
-    resetAudio(audio);
+    resetAudio(audio, trackFade);
     updateProgress();
     byId('provider-link').href = track.url;
     visible(byId('provider-link'), true);
@@ -407,7 +496,7 @@
     button.className = 'choice-button';
     button.setAttribute('aria-haspopup', 'dialog');
     button.setAttribute('aria-describedby', select.getAttribute('aria-describedby') || '');
-    button.onclick = function () { openChoice(select, label, button); };
+    button.onclick = function () { if (!button.disabled) { openChoice(select, label, button); } };
     label.onclick = function () { button.onclick(); return false; };
     choiceButtons[id] = button;
     select.parentNode.appendChild(button);
@@ -430,11 +519,14 @@
     byId('settings-scroll').scrollTop = 0;
     syncLayout();
     byId('settings-close').focus();
+    refreshCache();
+    cacheRefresh = setInterval(refreshCache, 4000);
   }
 
   function closeSettings() {
     if (!settingsOpen) { return; }
     closeChoice(false);
+    clearInterval(cacheRefresh);
     settingsOpen = false;
     visible(byId('settings'), false);
     syncLayout();
@@ -451,8 +543,8 @@
     sleepDeadline = 0;
     clearTimeout(sleepAlarm);
     resumeWhenReady = false;
-    audio.pause();
-    storeAudio.pause();
+    trackFade.pause();
+    previewFade.pause();
     message('player-status', '已定时暂停');
     if (panel === 'store-panel') { message('store-status', '已定时暂停'); }
     updateSettings();
@@ -484,11 +576,60 @@
     });
   }
 
+  function refreshCache() {
+    if (!cacheBusy && cacheRead === 0) { requestCache(''); }
+  }
+
+  function formatBytes(bytes) {
+    if (bytes >= 1073741824) { return (bytes / 1073741824).toFixed(1) + ' GB'; }
+    if (bytes >= 1048576) { return (bytes / 1048576).toFixed(1) + ' MB'; }
+    return bytes > 0 ? Math.ceil(bytes / 1024) + ' KB' : '0 MB';
+  }
+
+  function requestCache(action) {
+    var limit = byId('cache-limit');
+    var trigger = choiceButtons['cache-limit'];
+    var clear = byId('cache-clear');
+    var revision = ++cacheRevision;
+    if (action) {
+      cacheBusy = true;
+      trigger.disabled = clear.disabled = true;
+      message('cache-status', action === 'clear=1' ? '正在清理…' : '正在保存上限…');
+    } else {
+      cacheRead = revision;
+    }
+    get('/api/cache' + (action ? '?' + action : ''), function (error, data) {
+      if (cacheRead === revision) { cacheRead = 0; }
+      if (revision !== cacheRevision) { return; }
+      if (action) { cacheBusy = false; }
+      if (error) {
+        if (!action) {
+          cacheReady = false;
+          message('cache-usage', '暂时无法读取使用量');
+          visible(byId('cache-space'), false);
+        }
+        message('cache-status', error);
+        if (action) { limit.value = limit.getAttribute('data-saved'); }
+      } else {
+        cacheReady = true;
+        limit.value = String(data.limit);
+        limit.setAttribute('data-saved', limit.value);
+        message('cache-usage', '已用 ' + formatBytes(data.bytes) + ' · ' + data.count + ' 首');
+        message('cache-space', '设备可用 ' + formatBytes(data.free));
+        visible(byId('cache-space'), data.free >= 0);
+        if (action) { message('cache-status', action === 'clear=1' ? '缓存已清理' : '缓存上限已保存'); }
+      }
+      trigger.disabled = clear.disabled = !cacheReady;
+      updateSettings();
+    }, action ? 'POST' : 'GET');
+  }
+
   Object.keys(fields).forEach(function (id) {
     byId(id).onchange = function () {
       var field = fields[id];
       if (field.allowed.indexOf(this.value) === -1) { return; }
       preferences[field.key] = this.value;
+      if (id === 'fade' && this.value === 'off') { trackFade.reset(); previewFade.reset(); }
       message('settings-status', savePreferences() ? '' : '设置本次有效，设备暂时无法保存。');
       updateSettings();
       syncLayout();
@@ -501,7 +642,12 @@
     updateSettings();
     wakeSleepTimer();
   };
-  Object.keys(fields).concat('sleep-timer').forEach(addChoiceButton);
+  byId('cache-limit').onchange = function () {
+    if (!cacheBusy && cacheReady) { requestCache('limit=' + encodeURIComponent(this.value)); }
+  };
+  byId('cache-clear').onclick = function () { if (!cacheBusy) { requestCache('clear=1'); } };
+  Object.keys(fields).concat('sleep-timer', 'cache-limit').forEach(addChoiceButton);
+  choiceButtons['cache-limit'].disabled = true;
   updateSettings();
   byId('choice-close').onclick = byId('choice-backdrop').onclick = function () { closeChoice(true); };
   byId('search').onsubmit = function () { query.blur(); search(true); return false; };
@@ -512,12 +658,6 @@
   byId('settings-retry').onclick = checkConnection;
   byId('now-sleep').onclick = function () { showSettings(); choiceButtons['sleep-timer'].onclick(); };
   byId('app-menu-backdrop').onclick = function () { setMenu(false); };
-  byId('menu-search').onclick = function () {
-    setMenu(false);
-    closeSettings();
-    showResults();
-    query.focus();
-  };
   byId('menu-now').onclick = function () {
     setMenu(false);
     closeSettings();
@@ -537,30 +677,45 @@
     else { return; }
     event.preventDefault();
   }, false);
-  byId('toggle').onclick = function () { if (audio.paused) { playAudio(); } else { audio.pause(); } };
+  byId('toggle').onclick = function () { if (trackFade.shouldPlay()) { playAudio(); } else { trackFade.pause(); } };
+  byId('store-toggle').onclick = function () {
+    if (previewFade.shouldPlay()) { playMedia(previewFade, 'store-status'); }
+    else { previewFade.pause(); }
+  };
   byId('previous').onclick = function () { playAt(currentIndex - 1); };
   byId('next').onclick = function () { playAt(currentIndex + 1); };
-  byId('progress').onclick = function (event) {
-    var bounds = this.getBoundingClientRect();
-    if (mediaPath && isFinite(audio.duration) && audio.duration > 0) {
-      audio.currentTime = Math.max(0, Math.min(audio.duration, (event.clientX - bounds.left) * audio.duration / (bounds.right - bounds.left)));
+  function bindSeek(element, slider) {
+    function seek(time) {
+      if (isFinite(element.duration) && element.duration > 0) {
+        element.currentTime = Math.max(0, Math.min(element.duration, time));
+      }
     }
-  };
-  byId('progress').onkeydown = function (event) {
-    if (mediaPath && isFinite(audio.duration) && (event.keyCode === 37 || event.keyCode === 39)) {
-      audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + (event.keyCode === 37 ? -5 : 5)));
-      event.preventDefault();
-    }
-  };
+    slider.onclick = function (event) {
+      var bounds = this.getBoundingClientRect();
+      seek((event.clientX - bounds.left) * element.duration / (bounds.right - bounds.left));
+    };
+    slider.onkeydown = function (event) {
+      if (event.keyCode === 37 || event.keyCode === 39) {
+        seek(element.currentTime + (event.keyCode === 37 ? -5 : 5));
+        event.preventDefault();
+      }
+    };
+  }
+  bindSeek(audio, byId('progress'));
+  bindSeek(storeAudio, byId('store-progress'));
   audio.addEventListener('timeupdate', function () { finishSleepTimer(); updateProgress(); }, false);
-  storeAudio.addEventListener('timeupdate', finishSleepTimer, false);
+  storeAudio.addEventListener('timeupdate', function () { finishSleepTimer(); updateStoreProgress(); }, false);
   audio.addEventListener('durationchange', updateProgress, false);
+  storeAudio.addEventListener('durationchange', updateStoreProgress, false);
   audio.addEventListener('playing', function () {
     if (!finishSleepTimer()) { playing(true); message('player-status', ''); }
   }, false);
   storeAudio.addEventListener('playing', function () {
-    if (!finishSleepTimer()) { message('store-status', ''); }
+    if (!finishSleepTimer()) { message('store-status', ''); message('store-toggle', '暂停试听'); }
   }, false);
+  ['pause', 'ended', 'emptied'].forEach(function (name) {
+    storeAudio.addEventListener(name, function () { message('store-toggle', '播放试听'); }, false);
+  });
   audio.addEventListener('pause', function () { playing(false); }, false);
   audio.addEventListener('ended', function () {
     playing(false);

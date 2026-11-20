@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"io"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -17,14 +17,18 @@ import (
 )
 
 type stream struct {
-	media   *catalog.Media
-	source  string
-	expires time.Time
+	media    *catalog.Media
+	source   string
+	id       string
+	region   string
+	cacheKey string
+	expires  time.Time
 }
 
 type appServer struct {
 	catalog   catalog.Catalog
 	media     *http.Client
+	cache     *audioCache
 	web       http.Handler
 	host      string
 	localhost string
@@ -64,7 +68,8 @@ func (s *appServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	path := req.URL.Path
 	isMedia := strings.HasPrefix(path, "/media/")
-	if req.Method != http.MethodGet && !(req.Method == http.MethodHead && isMedia) {
+	if req.Method != http.MethodGet && !(req.Method == http.MethodHead && isMedia) &&
+		!(req.Method == http.MethodPost && path == "/api/cache") {
 		fail(w, http.StatusMethodNotAllowed, "请求方式不受支持。")
 		return
 	}
@@ -84,8 +89,33 @@ func (s *appServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	case "/api/search", "/api/play":
 		s.serveCatalog(w, req)
 		return
+	case "/api/cache":
+		s.serveCache(w, req)
+		return
 	}
 	fail(w, http.StatusNotFound, "找不到这个地址。")
+}
+
+func (s *appServer) serveCache(w http.ResponseWriter, req *http.Request) {
+	if s.cache == nil {
+		fail(w, http.StatusServiceUnavailable, "本机暂时无法写入音频缓存。")
+		return
+	}
+	if req.Method == http.MethodPost {
+		args := req.URL.Query()
+		limit, err := strconv.Atoi(args.Get("limit"))
+		clear := args.Get("clear") == "1"
+		if !(clear && len(args) == 1) && !(len(args) == 1 && err == nil && validCacheLimit(limit)) {
+			fail(w, http.StatusBadRequest, "请选择一个缓存上限。")
+			return
+		}
+		if err := s.cache.configure(limit, clear); err != nil {
+			logFailure("cache", err)
+			fail(w, http.StatusInternalServerError, "暂时无法修改音频缓存。")
+			return
+		}
+	}
+	respond(w, http.StatusOK, s.cache.status())
 }
 
 func (s *appServer) serveCatalog(w http.ResponseWriter, req *http.Request) {
@@ -131,6 +161,19 @@ func (s *appServer) serveCatalog(w http.ResponseWriter, req *http.Request) {
 		fail(w, http.StatusBadRequest, "曲目编号无效。")
 		return
 	}
+	region := ""
+	if source == "apple" {
+		region = provider.Storefront
+	}
+	entry := stream{source: source, id: id, region: region}
+	if source != "apple" {
+		entry.cacheKey = audioCacheKey(source, region, id)
+	}
+	extension := s.cache.extension(entry.cacheKey)
+	if extension != "" {
+		respond(w, http.StatusOK, map[string]string{"path": "/media/" + s.remember(entry, extension)})
+		return
+	}
 	media, err := provider.Resolve(req.Context(), source, id)
 	if err != nil {
 		logFailure(source, err)
@@ -141,14 +184,15 @@ func (s *appServer) serveCatalog(w http.ResponseWriter, req *http.Request) {
 		fail(w, http.StatusNotFound, "平台未提供可播音源。")
 		return
 	}
-	key := s.remember(source, media)
+	entry.media = media
+	key := s.remember(entry, "."+media.Extension)
 	respond(w, http.StatusOK, map[string]string{"path": "/media/" + key})
 }
 
-func (s *appServer) remember(source string, media *catalog.Media) string {
+func (s *appServer) remember(entry stream, extension string) string {
 	var token [18]byte
 	rand.Read(token[:])
-	key := hex.EncodeToString(token[:]) + "." + media.Extension
+	key := hex.EncodeToString(token[:]) + extension
 	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -165,7 +209,8 @@ func (s *appServer) remember(source string, media *catalog.Media) string {
 	if len(s.entries) >= 128 {
 		delete(s.entries, oldest)
 	}
-	s.entries[key] = stream{media: media, source: source, expires: now.Add(20 * time.Minute)}
+	entry.expires = now.Add(20 * time.Minute)
+	s.entries[key] = entry
 	return key
 }
 
@@ -182,7 +227,26 @@ func (s *appServer) sendMedia(w http.ResponseWriter, req *http.Request, key stri
 		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 		return
 	}
-	current := entry.media.URL
+	if file, extension := s.cache.open(entry.cacheKey); file != nil {
+		defer file.Close()
+		w.Header().Set("Content-Type", audioType[extension])
+		http.ServeContent(w, req, file.Name(), time.Time{}, file)
+		return
+	}
+	media := entry.media
+	if media == nil {
+		provider := s.catalog
+		if entry.region != "" {
+			provider.Storefront = entry.region
+		}
+		var err error
+		media, err = provider.Resolve(req.Context(), entry.source, entry.id)
+		if err != nil || media == nil {
+			fail(w, http.StatusNotFound, "缓存已移除，当前音源暂时不可播放。")
+			return
+		}
+	}
+	current := media.URL
 	for range 4 {
 		upstream, err := http.NewRequestWithContext(req.Context(), req.Method, current.String(), nil)
 		if err != nil {
@@ -219,7 +283,7 @@ func (s *appServer) sendMedia(w http.ResponseWriter, req *http.Request, key stri
 				w.WriteHeader(response.StatusCode)
 				return
 			}
-			w.Header().Set("Content-Type", audioType[entry.media.Extension])
+			w.Header().Set("Content-Type", audioType[media.Extension])
 			for _, name := range []string{"Content-Range", "Accept-Ranges", "Content-Length"} {
 				if value := response.Header.Get(name); value != "" && response.Header.Get("Content-Encoding") == "" {
 					w.Header().Set(name, value)
@@ -227,7 +291,7 @@ func (s *appServer) sendMedia(w http.ResponseWriter, req *http.Request, key stri
 			}
 			w.WriteHeader(response.StatusCode)
 			if req.Method != http.MethodHead {
-				_, _ = io.Copy(w, response.Body)
+				s.cache.copyTo(w, response.Body, entry.cacheKey, media.Extension, completeAudioLength(response))
 			}
 			return
 		default:
@@ -237,4 +301,16 @@ func (s *appServer) sendMedia(w http.ResponseWriter, req *http.Request, key stri
 		}
 	}
 	fail(w, http.StatusBadGateway, "原平台暂时无法提供音频。")
+}
+
+func completeAudioLength(response *http.Response) int64 {
+	size := response.ContentLength
+	if size <= 0 || response.Header.Get("Content-Encoding") != "" {
+		return 0
+	}
+	if response.StatusCode == http.StatusOK ||
+		response.Header.Get("Content-Range") == fmt.Sprintf("bytes 0-%d/%d", size-1, size) {
+		return size
+	}
+	return 0
 }

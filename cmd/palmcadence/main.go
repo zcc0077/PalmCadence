@@ -22,6 +22,7 @@ func main() {
 	port := flag.Int("port", 8787, "local HTTP port")
 	web := flag.String("web", "", "serve the web UI from this directory for browser development")
 	ca := flag.String("ca", "", "CA bundle on legacy webOS")
+	cacheDir := flag.String("cache", "", "directory for the local audio cache")
 	storefront := flag.String("storefront", "US", "two-letter Apple storefront")
 	flag.Parse()
 
@@ -68,6 +69,14 @@ func main() {
 	}
 	if *web != "" {
 		app.web = http.FileServer(http.Dir(*web))
+	}
+	if *cacheDir != "" {
+		cache, err := openAudioCache(*cacheDir)
+		if err != nil {
+			log.Printf("audio cache unavailable: %v", err)
+		} else {
+			app.cache = cache
+		}
 	}
 	server := &http.Server{Addr: address, Handler: &app, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192}
 	log.Printf("PalmCadence listening at http://%s", address)

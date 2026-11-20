@@ -4,7 +4,7 @@ body { background: #10151c; color: #f4f7f3; font: 14px/1.4 Arial, sans-serif; }
 button, input { font: inherit; -webkit-box-sizing: border-box; box-sizing: border-box; }
 button { background: #242e39; border: 1px solid #3a4651; border-radius: 8px; color: #f4f7f3; cursor: pointer; padding: 7px 10px; }
 button:disabled { cursor: default; opacity: .47; }
-button:focus, input:focus, a:focus, #progress:focus { outline: 1px solid #96eac2; outline-offset: 2px; }
+button:focus, input:focus, a:focus, #progress:focus, #store-progress:focus { outline: 1px solid #96eac2; outline-offset: 2px; }
 a { color: #a6edca; }
 h2, p { margin: 0; }
 .hidden { display: none !important; }
@@ -79,11 +79,14 @@ h1 span { margin-left: 3px; color: #9cabb8; font-size: 11px; letter-spacing: 0; 
 #store-panel { bottom: 0; }
 #store-badge { line-height: 0; }
 .detail audio { display: block; width: 100%; max-width: 360px; margin: 4px auto; }
+#store-controls { max-width: 360px; margin: 10px auto 0; }
+#store-progress { position: relative; height: 23px; cursor: pointer; }
+#store-time { font-size: 12px; }
 
 #player { height: 94px; position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid #374653; background: #1b252f; -webkit-box-sizing: border-box; box-sizing: border-box; }
 #progress { height: 16px; margin: 0 12px; position: relative; cursor: pointer; }
 .progress-track { position: absolute; top: 8px; left: 0; right: 0; height: 3px; border-radius: 2px; background: #465562; }
-#progress-fill { height: 100%; width: 0; display: block; border-radius: 2px; background: #a6edca; }
+#progress-fill, #store-progress-fill { height: 100%; width: 0; display: block; border-radius: 2px; background: #a6edca; }
 #playing { position: absolute; left: 12px; right: 120px; top: 17px; height: 44px; background: transparent; border: 0; text-align: left; padding: 0 2px 0 43px; }
 #playing:disabled { opacity: 1; }
 #now-art { top: 5px; left: 0; }
@@ -258,7 +261,7 @@ body.theme-light { background: #f4f3ed; color: #243b35; }
 .theme-light #player { background: #e1eae1; border-color: #adc0b2; }
 .theme-light #player-status { color: #78452b; }
 .theme-light .progress-track { background: #aebdb2; }
-.theme-light #progress-fill { background: #34694f; }
+.theme-light #progress-fill, .theme-light #store-progress-fill { background: #34694f; }
 .theme-light .settings-screen { background: #f4f3ed; }
 .theme-light .settings-head { background: #e3ece2; border-color: #b6c7bb; }
 .theme-light .settings-layout h3, .theme-light #settings-status { color: #28664f; }
