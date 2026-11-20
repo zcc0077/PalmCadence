@@ -95,6 +95,17 @@ func (s *appServer) serveCatalog(w http.ResponseWriter, req *http.Request) {
 		fail(w, http.StatusBadRequest, "请选择一个音乐平台。")
 		return
 	}
+	provider := s.catalog
+	if source == "apple" {
+		switch country := args.Get("country"); country {
+		case "":
+		case "US", "CN", "HK", "TW", "JP":
+			provider.Storefront = country
+		default:
+			fail(w, http.StatusBadRequest, "请选择一个 Apple Music 地区。")
+			return
+		}
+	}
 	if req.URL.Path == "/api/search" {
 		query := strings.TrimSpace(args.Get("q"))
 		page := 1
@@ -105,7 +116,7 @@ func (s *appServer) serveCatalog(w http.ResponseWriter, req *http.Request) {
 			fail(w, http.StatusBadRequest, "请输入 1 到 80 个字符的歌名或歌手。")
 			return
 		}
-		results, err := s.catalog.Search(req.Context(), source, query, page)
+		results, err := provider.Search(req.Context(), source, query, page)
 		if err != nil {
 			logFailure(source, err)
 			fail(w, http.StatusBadGateway, "暂时无法连接这个平台，请稍后重试。")
@@ -120,7 +131,7 @@ func (s *appServer) serveCatalog(w http.ResponseWriter, req *http.Request) {
 		fail(w, http.StatusBadRequest, "曲目编号无效。")
 		return
 	}
-	media, err := s.catalog.Resolve(req.Context(), source, id)
+	media, err := provider.Resolve(req.Context(), source, id)
 	if err != nil {
 		logFailure(source, err)
 		fail(w, http.StatusBadGateway, "暂时无法连接这个平台，请稍后重试。")

@@ -10,7 +10,7 @@
 <div id="header" role="banner">
   <img src="icon.png" alt="" width="32" height="32">
   <h1>PalmCadence <span>掌弦</span></h1>
-  <button id="settings-button" type="button" aria-label="检查网络">网络</button>
+  <button id="settings-button" type="button" aria-label="打开设置"><span class="settings-symbol" aria-hidden="true"></span>设置</button>
 </div>
 <form id="search">
   <label class="sr-only" for="query">歌曲或歌手</label>
@@ -50,17 +50,99 @@
 </div>
 <div id="now-panel" class="sheet detail hidden" role="region" aria-label="正在播放">
   <button id="now-close" type="button" class="back">‹ 返回列表</button>
+  <button id="now-sleep" type="button">定时停止</button>
   <div id="now-record" class="record-art" aria-hidden="true"><span class="record-groove"></span><span class="record-label"></span></div>
   <h2 id="detail-title"></h2>
   <p id="detail-info"></p>
   <p id="detail-status"></p>
 </div>
-<div id="settings" class="sheet detail hidden" role="region" aria-label="网络">
-  <button id="settings-close" type="button" class="back">‹ 返回列表</button>
-  <h2>网络</h2>
-  <p>请将设备连接到 Wi-Fi，或打开移动数据。</p>
-  <p id="connection-status" role="status"></p>
-  <button id="settings-retry" type="button">重新检查</button>
+<div id="settings" class="settings-screen hidden" role="region" aria-labelledby="settings-title">
+  <div class="settings-head">
+    <button id="settings-close" type="button" class="icon-back" aria-label="返回"></button>
+    <h2 id="settings-title">设置</h2>
+  </div>
+  <div id="settings-scroll">
+    <div class="settings-layout">
+      <div class="settings-column">
+        <h3>播放</h3>
+        <div class="settings-group">
+          <div class="settings-row">
+            <label for="playback-mode">播放方式</label>
+            <span id="playback-help">播到列表末尾后停止</span>
+            <select id="playback-mode" aria-describedby="playback-help">
+              <option value="sequence">顺序播放</option><option value="repeat-all">列表循环</option>
+              <option value="repeat-one">单曲循环</option><option value="stop">逐首停止</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <label for="sleep-timer">定时停止</label>
+            <span id="sleep-help">到时暂停当前播放</span>
+            <select id="sleep-timer" aria-describedby="sleep-help">
+              <option value="0">关闭</option><option value="15">15 分钟</option>
+              <option value="30">30 分钟</option><option value="60">60 分钟</option>
+            </select>
+          </div>
+        </div>
+        <h3>音源</h3>
+        <div class="settings-group">
+          <div class="settings-row">
+            <label for="startup-source">启动音源</label>
+            <span>下次打开时使用</span>
+            <select id="startup-source">
+              <option value="last">上次使用</option><option value="netease">网易云</option>
+              <option value="tencent">QQ 音乐</option><option value="kuwo">酷我</option>
+              <option value="kugou">酷狗</option><option value="apple">Apple Music</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <label for="apple-region">Apple Music 地区</label>
+            <span>用于曲库搜索和试听</span>
+            <select id="apple-region">
+              <option value="US">美国</option><option value="CN">中国大陆</option>
+              <option value="HK">香港</option><option value="TW">台湾</option><option value="JP">日本</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="settings-column">
+        <h3>外观</h3>
+        <div class="settings-group">
+          <div class="settings-row">
+            <label for="theme">配色</label>
+            <span>立即应用到整个界面</span>
+            <select id="theme"><option value="dark">深色</option><option value="light">浅色</option></select>
+          </div>
+        </div>
+        <h3>诊断与关于</h3>
+        <div class="settings-group">
+          <div class="settings-row action-row">
+            <label for="settings-retry">网络检查</label>
+            <span id="connection-status" role="status">检查当前音源是否可访问</span>
+            <button id="settings-retry" type="button">检查</button>
+          </div>
+          <div class="settings-row action-row">
+            <strong>PalmCadence</strong>
+            <span>版本 0.3.0</span>
+            <a href="https://github.com/zcc0077/PalmCadence" target="_blank" rel="noopener">开源项目 ›</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p id="settings-status" role="status"></p>
+  </div>
+</div>
+<div id="choice-layer" class="hidden">
+  <div id="choice-backdrop" aria-hidden="true"></div>
+  <div id="choice-dialog" role="dialog" aria-modal="true" aria-labelledby="choice-title">
+    <div class="choice-head"><h3 id="choice-title"></h3><button id="choice-close" type="button">关闭</button></div>
+    <div id="choice-items" role="group" aria-labelledby="choice-title"></div>
+  </div>
+</div>
+<div id="app-menu-backdrop" class="hidden" aria-hidden="true"></div>
+<div id="app-menu" class="hidden" role="group" aria-label="PalmCadence 应用菜单">
+  <button id="menu-search" type="button">搜索歌曲</button>
+  <button id="menu-now" type="button" class="hidden">正在播放</button>
+  <button id="menu-settings" type="button">设置</button>
 </div>
 <div id="player" role="region" aria-label="播放控制">
   <div id="progress" role="slider" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"><div class="progress-track"><span id="progress-fill"></span></div></div>
