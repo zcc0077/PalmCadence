@@ -5,7 +5,9 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 job=/etc/event.d/palmcadence
 /sbin/stop palmcadence >/dev/null 2>&1 || :
 if [ "${1:-}" = remove ]; then
-    rm -f /media/cryptofs/apps/.palmcadence-account/netease.json
+    for provider in netease tencent kugou kuwo; do
+        rm -f "/media/cryptofs/apps/.palmcadence-account/$provider.json"
+    done
 fi
 [ -f "$job" ] || exit 0
 

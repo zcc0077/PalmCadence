@@ -25,35 +25,34 @@ import (
 )
 
 const (
-	accountFile = "netease.json"
-	qrLifetime  = 3 * time.Minute
+	qrLifetime = 3 * time.Minute
 )
 
 var errLoginBusy = errors.New("too many login attempts")
 
 type loginFlow struct {
-	providerKey string
-	cookie      string
-	until       time.Time
-	polling     bool
+	challenge catalog.LoginChallenge
+	cookie    string
+	until     time.Time
+	polling   bool
 }
 
-type neteaseSession struct {
+type accountSession struct {
 	TokenHash string                 `json:"tokenHash"`
 	Cookie    string                 `json:"musicU"`
-	Profile   catalog.NetEaseProfile `json:"profile"`
+	Profile   catalog.AccountProfile `json:"profile"`
 }
 
 type accountStore struct {
-	dir     string
-	mu      sync.Mutex
-	session neteaseSession
-	flows   map[string]*loginFlow
+	dir      string
+	mu       sync.Mutex
+	sessions map[string]accountSession
+	flows    map[string]*loginFlow
 }
 
 type loginStatus struct {
 	State   string                  `json:"state"`
-	Profile *catalog.NetEaseProfile `json:"profile,omitempty"`
+	Profile *catalog.AccountProfile `json:"profile,omitempty"`
 }
 
 func openAccountStore(dir string) (*accountStore, error) {
@@ -76,18 +75,20 @@ func openAccountStore(dir string) (*accountStore, error) {
 			_ = os.Remove(filepath.Join(dir, file.Name()))
 		}
 	}
-	store := &accountStore{dir: dir, flows: make(map[string]*loginFlow)}
-	data, err := os.ReadFile(filepath.Join(dir, accountFile))
-	if os.IsNotExist(err) {
-		return store, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var saved neteaseSession
-	if len(data) <= 8192 && json.Unmarshal(data, &saved) == nil && isAccountToken(saved.TokenHash) &&
-		catalog.ValidNetEaseLogin(saved.Cookie) && saved.Profile.ID > 0 {
-		store.session = saved
+	store := &accountStore{dir: dir, flows: make(map[string]*loginFlow), sessions: make(map[string]accountSession)}
+	for _, source := range []string{"netease", "tencent", "kugou", "kuwo"} {
+		data, err := os.ReadFile(filepath.Join(dir, source+".json"))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		var saved accountSession
+		if len(data) <= 8192 && json.Unmarshal(data, &saved) == nil && isAccountToken(saved.TokenHash) &&
+			catalog.ValidAccountSecret(source, saved.Cookie) && saved.Profile.ID != "" {
+			store.sessions[source] = saved
+		}
 	}
 	return store, nil
 }
@@ -107,19 +108,19 @@ func accountHash(token string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
 }
 
-func (a *accountStore) current(hash string) neteaseSession {
+func (a *accountStore) current(source, hash string) accountSession {
 	if a == nil || hash == "" {
-		return neteaseSession{}
+		return accountSession{}
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if subtle.ConstantTimeCompare([]byte(hash), []byte(a.session.TokenHash)) == 1 {
-		return a.session
+	if subtle.ConstantTimeCompare([]byte(hash), []byte(a.sessions[source].TokenHash)) == 1 {
+		return a.sessions[source]
 	}
-	return neteaseSession{}
+	return accountSession{}
 }
 
-func (a *accountStore) save(session neteaseSession) error {
+func (a *accountStore) save(source string, session accountSession) error {
 	data, err := json.Marshal(session)
 	if err != nil {
 		return err
@@ -134,29 +135,29 @@ func (a *accountStore) save(session neteaseSession) error {
 	if err := errors.Join(writeErr, closeErr); err != nil {
 		return err
 	}
-	if err := os.Rename(temp.Name(), filepath.Join(a.dir, accountFile)); err != nil {
+	if err := os.Rename(temp.Name(), filepath.Join(a.dir, source+".json")); err != nil {
 		return err
 	}
-	a.session = session
+	a.sessions[source] = session
 	return nil
 }
 
-func (a *accountStore) forget(hash string) error {
+func (a *accountStore) forget(source, hash string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	delete(a.flows, hash)
-	if hash == "" || subtle.ConstantTimeCompare([]byte(hash), []byte(a.session.TokenHash)) != 1 {
+	delete(a.flows, source+hash)
+	if hash == "" || subtle.ConstantTimeCompare([]byte(hash), []byte(a.sessions[source].TokenHash)) != 1 {
 		return nil
 	}
-	err := os.Remove(filepath.Join(a.dir, accountFile))
+	err := os.Remove(filepath.Join(a.dir, source+".json"))
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	a.session = neteaseSession{}
+	delete(a.sessions, source)
 	return nil
 }
 
-func (a *accountStore) begin(ctx context.Context, provider catalog.Catalog) (string, string, error) {
+func (a *accountStore) begin(ctx context.Context, source string, provider catalog.AccountProvider) (string, string, error) {
 	var random [32]byte
 	rand.Read(random[:])
 	token := hex.EncodeToString(random[:])
@@ -173,49 +174,48 @@ func (a *accountStore) begin(ctx context.Context, provider catalog.Catalog) (str
 		a.mu.Unlock()
 		return "", "", errLoginBusy
 	}
-	a.flows[hash] = flow
+	a.flows[source+hash] = flow
 	a.mu.Unlock()
 
-	key, err := provider.NetEaseQRStart(ctx)
-	var png []byte
-	if err == nil {
-		link := "https://music.163.com/login?" + url.Values{"codekey": {key}}.Encode()
-		png, err = qrcode.Encode(link, qrcode.Medium, 180)
+	challenge, err := provider.Start(ctx)
+	if err == nil && challenge.Image == "" {
+		var png []byte
+		png, err = qrcode.Encode(challenge.Link, qrcode.Medium, 180)
+		challenge.Image = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
 	}
-
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err != nil {
-		delete(a.flows, hash)
+		delete(a.flows, source+hash)
 		return "", "", err
 	}
-	flow.providerKey = key
-	return token, "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
+	flow.challenge = challenge
+	return token, challenge.Image, nil
 }
 
-func signedIn(profile catalog.NetEaseProfile) loginStatus {
+func signedIn(profile catalog.AccountProfile) loginStatus {
 	return loginStatus{State: "signed_in", Profile: &profile}
 }
 
-func (a *accountStore) poll(ctx context.Context, provider catalog.Catalog, hash string) (loginStatus, error) {
+func (a *accountStore) poll(ctx context.Context, source string, provider catalog.AccountProvider, hash string) (loginStatus, error) {
 	a.mu.Lock()
-	if hash != "" && subtle.ConstantTimeCompare([]byte(hash), []byte(a.session.TokenHash)) == 1 {
-		profile := a.session.Profile
+	if hash != "" && subtle.ConstantTimeCompare([]byte(hash), []byte(a.sessions[source].TokenHash)) == 1 {
+		profile := a.sessions[source].Profile
 		a.mu.Unlock()
 		return signedIn(profile), nil
 	}
-	flow := a.flows[hash]
+	flow := a.flows[source+hash]
 	if flow == nil || !flow.until.After(time.Now()) {
-		delete(a.flows, hash)
+		delete(a.flows, source+hash)
 		a.mu.Unlock()
 		return loginStatus{State: "expired"}, nil
 	}
-	if flow.polling || flow.providerKey == "" {
+	if flow.polling || flow.challenge.Key == "" {
 		a.mu.Unlock()
 		return loginStatus{State: "waiting"}, nil
 	}
 	flow.polling = true
-	key, cookie := flow.providerKey, flow.cookie
+	challenge, cookie := flow.challenge, flow.cookie
 	a.mu.Unlock()
 	defer func() {
 		a.mu.Lock()
@@ -224,14 +224,14 @@ func (a *accountStore) poll(ctx context.Context, provider catalog.Catalog, hash 
 	}()
 
 	if cookie == "" {
-		code, grant, err := provider.NetEaseQRPoll(ctx, key)
+		code, grant, err := provider.Poll(ctx, challenge)
 		if err != nil {
 			return loginStatus{}, err
 		}
 		switch code {
-		case 800:
+		case 800, 403:
 			a.mu.Lock()
-			delete(a.flows, hash)
+			delete(a.flows, source+hash)
 			a.mu.Unlock()
 			return loginStatus{State: "expired"}, nil
 		case 801:
@@ -239,6 +239,9 @@ func (a *accountStore) poll(ctx context.Context, provider catalog.Catalog, hash 
 		case 802:
 			return loginStatus{State: "confirming"}, nil
 		case 803:
+			if !catalog.ValidAccountSecret(source, grant) {
+				return loginStatus{}, errors.New("provider did not return a valid account session")
+			}
 			cookie = grant
 			a.mu.Lock()
 			flow.cookie = grant
@@ -248,19 +251,19 @@ func (a *accountStore) poll(ctx context.Context, provider catalog.Catalog, hash 
 		}
 	}
 
-	profile, err := provider.NetEaseAccount(ctx, cookie)
+	profile, err := provider.Profile(ctx, cookie)
 	if err != nil {
 		return loginStatus{}, err
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.flows[hash] != flow || !flow.until.After(time.Now()) {
+	if a.flows[source+hash] != flow || !flow.until.After(time.Now()) {
 		return loginStatus{State: "expired"}, nil
 	}
-	if err := a.save(neteaseSession{TokenHash: hash, Cookie: cookie, Profile: profile}); err != nil {
+	if err := a.save(source, accountSession{TokenHash: hash, Cookie: cookie, Profile: profile}); err != nil {
 		return loginStatus{}, err
 	}
-	delete(a.flows, hash)
+	delete(a.flows, source+hash)
 	return signedIn(profile), nil
 }
 
@@ -284,53 +287,62 @@ func (s *appServer) serveAccount(w http.ResponseWriter, req *http.Request, actio
 		fail(w, http.StatusBadRequest, "账号请求无效。")
 		return
 	}
+	source := form.Get("source")
+	if source == "" {
+		source = "netease"
+	}
+	provider := s.catalog.Account(source)
+	if provider == nil {
+		fail(w, http.StatusNotImplemented, "此音源暂不支持在 Palm 上登录。")
+		return
+	}
 	hash := accountHash(form.Get("token"))
 	ctx := req.Context()
 	switch action {
 	case "start":
-		token, image, err := s.account.begin(ctx, s.catalog)
+		token, image, err := s.account.begin(ctx, source, provider)
 		if errors.Is(err, errLoginBusy) {
 			fail(w, http.StatusTooManyRequests, "扫码请求过多，请稍后重试。")
 			return
 		}
 		if err != nil {
-			logFailure("netease-login", err)
+			logFailure(source+"-login", err)
 			fail(w, http.StatusBadGateway, "暂时拿不到登录码，请重试。")
 			return
 		}
 		respond(w, http.StatusOK, map[string]string{"token": token, "image": image})
 	case "poll":
-		status, err := s.account.poll(ctx, s.catalog, hash)
+		status, err := s.account.poll(ctx, source, provider, hash)
 		if err != nil {
-			logFailure("netease-login", err)
+			logFailure(source+"-login", err)
 			fail(w, http.StatusBadGateway, "暂时无法确认登录。")
 			return
 		}
 		respond(w, http.StatusOK, status)
 	case "status":
-		if session := s.account.current(hash); session.Cookie != "" {
+		if session := s.account.current(source, hash); session.Cookie != "" {
 			respond(w, http.StatusOK, signedIn(session.Profile))
 		} else {
 			respond(w, http.StatusOK, loginStatus{State: "signed_out"})
 		}
 	case "logout":
-		if err := s.account.forget(hash); err != nil {
-			logFailure("netease-logout", err)
+		if err := s.account.forget(source, hash); err != nil {
+			logFailure(source+"-logout", err)
 			fail(w, http.StatusInternalServerError, "暂时无法退出登录，请重试。")
 			return
 		}
 		respond(w, http.StatusOK, loginStatus{State: "signed_out"})
 	case "playlists", "tracks", "play":
-		s.servePersonalMusic(w, req, action, form, hash)
+		s.servePersonalMusic(w, req, source, provider, action, form, hash)
 	default:
 		fail(w, http.StatusNotFound, "找不到这个账号操作。")
 	}
 }
 
-func (s *appServer) servePersonalMusic(w http.ResponseWriter, req *http.Request, action string, args url.Values, hash string) {
-	session := s.account.current(hash)
+func (s *appServer) servePersonalMusic(w http.ResponseWriter, req *http.Request, source string, provider catalog.AccountProvider, action string, args url.Values, hash string) {
+	session := s.account.current(source, hash)
 	if session.Cookie == "" {
-		fail(w, http.StatusUnauthorized, "请先登录网易云账号。")
+		fail(w, http.StatusUnauthorized, "请先登录当前音源账号。")
 		return
 	}
 
@@ -339,7 +351,7 @@ func (s *appServer) servePersonalMusic(w http.ResponseWriter, req *http.Request,
 	if raw := args.Get("page"); raw != "" {
 		page, _ = strconv.Atoi(raw)
 	}
-	if page < 1 || page > 1000 || (action != "playlists" && !catalog.ValidID("netease", id)) {
+	if page < 1 || page > 1000 || (action == "tracks" && !catalog.ValidPlaylistID(source, id)) || (action == "play" && !catalog.ValidID(source, id)) {
 		fail(w, http.StatusBadRequest, "歌单或曲目编号无效。")
 		return
 	}
@@ -348,33 +360,33 @@ func (s *appServer) servePersonalMusic(w http.ResponseWriter, req *http.Request,
 	var err error
 	ctx := req.Context()
 	if action == "playlists" {
-		result, err = s.catalog.NetEasePlaylists(ctx, session.Cookie, session.Profile.ID, page)
+		result, err = provider.Playlists(ctx, session.Cookie, session.Profile.ID, page)
 	} else if action == "tracks" {
-		result, err = s.catalog.NetEasePlaylistTracks(ctx, session.Cookie, id, page)
+		result, err = provider.Tracks(ctx, session.Cookie, id, page)
 	} else {
 		var media *catalog.Media
-		media, err = s.catalog.NetEaseAuthorizedMedia(ctx, session.Cookie, id)
+		media, err = provider.Play(ctx, session.Cookie, id)
 		if err == nil && media == nil {
 			fail(w, http.StatusNotFound, "平台未给此账号提供可播音源。")
 			return
 		}
 		if err == nil {
-			entry := stream{source: "netease", media: media, accountHash: hash}
+			entry := stream{source: source, media: media, accountHash: hash}
 			result = map[string]string{"path": "/media/" + s.remember(entry, "."+media.Extension)}
 		}
 	}
-	if errors.Is(err, catalog.ErrNetEaseSession) {
-		_ = s.account.forget(hash)
-		fail(w, http.StatusUnauthorized, "网易云登录已失效，请重新扫码。")
+	if errors.Is(err, catalog.ErrAccountExpired) {
+		_ = s.account.forget(source, hash)
+		fail(w, http.StatusUnauthorized, "登录已失效，请重新扫码。")
 		return
 	}
 	if err != nil {
-		logFailure("netease-account", err)
-		fail(w, http.StatusBadGateway, "暂时无法连接网易云，请重试。")
+		logFailure(source+"-account", err)
+		fail(w, http.StatusBadGateway, "暂时无法连接音源，请重试。")
 		return
 	}
-	if s.account.current(hash).Cookie == "" {
-		fail(w, http.StatusUnauthorized, "请先登录网易云账号。")
+	if s.account.current(source, hash).Cookie == "" {
+		fail(w, http.StatusUnauthorized, "请先登录当前音源账号。")
 		return
 	}
 	respond(w, http.StatusOK, result)

@@ -129,7 +129,44 @@ func TestNetEaseAccountFlowKeepsCredentialsOnDevice(t *testing.T) {
 	}
 	post("playlists", start.Token, "", 401, "请先登录")
 	reopened, err := openAccountStore(store.dir)
-	if err != nil || reopened.current(accountHash(start.Token)).Cookie != "" {
+	if err != nil || reopened.current("netease", accountHash(start.Token)).Cookie != "" {
 		t.Fatalf("session survived logout: %v", err)
+	}
+}
+
+func TestAccountStoreKeepsProvidersIndependent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "account")
+	store, err := openAccountStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	neteaseHash := accountHash(strings.Repeat("a", 64))
+	qqHash := accountHash(strings.Repeat("b", 64))
+	netease := accountSession{TokenHash: neteaseHash, Cookie: "netease_example", Profile: catalog.AccountProfile{ID: "19", Name: "网易云"}}
+	qq := accountSession{TokenHash: qqHash, Cookie: `{"musicid":"20","musickey":"qq_example"}`, Profile: catalog.AccountProfile{ID: "20", Name: "QQ"}}
+	if err := store.save("netease", netease); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.save("tencent", qq); err != nil {
+		t.Fatal(err)
+	}
+	if store.current("tencent", neteaseHash).Cookie != "" {
+		t.Fatal("NetEase capability could access QQ")
+	}
+	if err := store.forget("tencent", neteaseHash); err != nil {
+		t.Fatal(err)
+	}
+	if store.current("tencent", qqHash).Cookie == "" {
+		t.Fatal("wrong capability logged out QQ")
+	}
+	if err := store.forget("tencent", qqHash); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := openAccountStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.current("netease", neteaseHash) != netease || reopened.current("tencent", qqHash).Cookie != "" {
+		t.Fatal("QQ logout was not isolated")
 	}
 }

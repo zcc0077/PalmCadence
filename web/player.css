@@ -289,6 +289,11 @@ body.theme-light { background: #f4f3ed; color: #243b35; }
 #account-screen .settings-head h2 { letter-spacing: 0; }
 #account-scroll { position: absolute; top: 57px; right: 0; bottom: 0; left: 0; overflow-y: auto; padding: 14px 12px 18px; }
 #account-home, #account-list, #account-list-status, #account-more { max-width: 700px; margin-right: auto; margin-left: auto; }
+#account-sources { margin-bottom: 10px; white-space: nowrap; }
+#account-sources button { width: 19%; height: 34px; margin-right: 1.25%; padding: 0 1px; font-size: 12px; border-radius: 16px; }
+#account-sources button:last-child { margin-right: 0; font-size: 10px; }
+#account-sources button.active { background: #254236; border-color: #78c5a4; color: #b8f4d6; font-weight: bold; }
+.theme-light #account-sources button.active { background: #d2e7d8; border-color: #7ba48c; color: #245740; }
 .account-profile { padding: 15px 12px; border: 1px solid #34414d; border-radius: 10px; background: #1a242e; text-align: center; }
 .account-profile h3 { margin: 0 0 4px; word-wrap: break-word; }
 #account-state, #account-list-status { color: #b5c3ce; font-size: 12px; }
@@ -312,6 +317,9 @@ body.theme-light { background: #f4f3ed; color: #243b35; }
   #account-scroll { top: 67px; padding-top: 20px; }
 }
 @media screen and (max-height: 455px) {
-  .account-profile { padding: 9px 8px; }
-  #account-qr { width: 142px; height: 142px; margin-top: 8px; }
+  #account-scroll { padding-top: 3px; }
+  #account-sources { margin-bottom: 3px; }
+  #account-sources button { height: 29px; }
+  .account-profile { padding: 7px 8px; }
+  #account-qr { width: 125px; height: 125px; margin-top: 5px; }
 }

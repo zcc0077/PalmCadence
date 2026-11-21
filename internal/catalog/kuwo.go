@@ -52,6 +52,10 @@ const kuwoHome = "https://www.kuwo.cn/"
 const kuwoAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
 
 func (c Catalog) kuwoMedia(ctx context.Context, id string) (string, error) {
+	return c.kuwoMediaWithAccount(ctx, id, kuwoGrant{})
+}
+
+func (c Catalog) kuwoMediaWithAccount(ctx context.Context, id string, account kuwoGrant) (string, error) {
 	// The public web player issues a fresh guest cookie even without an account.
 	cookie, err := c.kuwoGuest(ctx)
 	if err != nil {
@@ -75,6 +79,9 @@ func (c Catalog) kuwoMedia(ctx context.Context, id string) (string, error) {
 	req.Header.Set("Referer", kuwoHome)
 	req.Header.Set("Secret", kuwoGuestProof(cookie.Value, 10_000_000+salt.Int64()))
 	req.AddCookie(cookie)
+	for name, value := range account.Cookies {
+		req.AddCookie(&http.Cookie{Name: name, Value: value})
+	}
 	body, err := c.readCatalog(req)
 	if err != nil {
 		return "", err

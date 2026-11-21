@@ -231,8 +231,8 @@ func (s *appServer) sendMedia(w http.ResponseWriter, req *http.Request, key stri
 		fail(w, http.StatusNotFound, "播放地址已过期，请重新选择曲目。")
 		return
 	}
-	if entry.accountHash != "" && s.account.current(entry.accountHash).Cookie == "" {
-		fail(w, http.StatusUnauthorized, "网易云账号已退出。")
+	if entry.accountHash != "" && s.account.current(entry.source, entry.accountHash).Cookie == "" {
+		fail(w, http.StatusUnauthorized, "此音源的账号已退出。")
 		return
 	}
 	byteRange := req.Header.Get("Range")

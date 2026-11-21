@@ -57,10 +57,17 @@ func main() {
 			return nil
 		},
 	}
+	accountTransport := clientTransport.Clone()
+	accountTransport.ResponseHeaderTimeout = 17 * time.Second
+	accountClient := &http.Client{
+		Transport:     accountTransport,
+		Timeout:       20 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	portString := strconv.Itoa(*port)
 	address := "127.0.0.1:" + portString
 	app := appServer{
-		catalog: catalog.Catalog{Client: catalogClient, Storefront: strings.ToUpper(*storefront)},
+		catalog: catalog.Catalog{Client: catalogClient, AccountClient: accountClient, Storefront: strings.ToUpper(*storefront)},
 		media: &http.Client{
 			Timeout: 15 * time.Minute, Transport: clientTransport,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },

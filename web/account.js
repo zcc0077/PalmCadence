@@ -3,9 +3,15 @@
 
   window.createPalmAccount = function (ui) {
     var byId = function (id) { return document.getElementById(id); };
-    var storageKey = 'palmcadence.netease.session';
-    var token = readToken();
+    var providers = ['netease', 'tencent', 'kuwo', 'kugou'];
+    var scanWith = { netease: '网易云音乐 App', tencent: '微信', kuwo: '微信', kugou: '酷狗音乐 App' };
+    var tokens = {};
+    var profiles = {};
+    var source = 'netease';
+    var tabs = byId('account-sources').getElementsByTagName('button');
+    var activeSource = '';
     var profile;
+    var token;
     var opened = false;
     var pending = '';
     var qrRevision = 0;
@@ -18,34 +24,52 @@
     var listPage = 0;
     var activeSong = '';
 
-    function readToken() {
-      try { return window.localStorage.getItem(storageKey) || ''; }
+    function storageKey(provider) { return 'palmcadence.' + provider + '.session'; }
+
+    function readToken(provider) {
+      try { return window.localStorage.getItem(storageKey(provider)) || ''; }
       catch (error) { return ''; }
     }
 
-    function storeToken(value) {
-      token = value;
+    function storeToken(value, provider) {
+      provider = provider || source;
+      tokens[provider] = value;
+      if (provider === source) { token = value; }
       try {
-        if (value) { window.localStorage.setItem(storageKey, value); }
-        else { window.localStorage.removeItem(storageKey); }
+        if (value) { window.localStorage.setItem(storageKey(provider), value); }
+        else { window.localStorage.removeItem(storageKey(provider)); }
       } catch (error) {}
     }
 
-    function call(action, fields, done) {
+    function call(action, fields, done, provider) {
+      fields.source = provider || source;
       var body = Object.keys(fields).map(function (name) {
         return encodeURIComponent(name) + '=' + encodeURIComponent(fields[name]);
       }).join('&');
       ui.request('/api/account/' + action, done, 'POST', body);
     }
 
+    function refreshEntry() {
+      var signedIn = providers.some(function (provider) { return Boolean(profiles[provider]); });
+      ui.message('account-open', signedIn ? '我的' : '登录');
+      byId('account-open').setAttribute('aria-label', signedIn ? '打开我的歌单' : '打开音源账号');
+    }
+
     function refreshProfile() {
-      ui.visible(byId('account-login'), !profile);
+      var supported = Boolean(scanWith[source]);
+      ui.visible(byId('account-login'), supported && !profile);
       ui.visible(byId('account-logout'), Boolean(profile));
       ui.visible(byId('account-library-title'), Boolean(profile));
-      ui.message('account-name', profile ? profile.nickname || '网易云账号' : '网易云音乐');
-      ui.message('account-open', profile ? '我的' : '登录');
-      byId('account-open').setAttribute('aria-label', profile ? '打开我的歌单' : '登录网易云账号');
-      ui.message('account-state', profile ? '已登录' : '用手机上的网易云音乐 App 扫码登录');
+      ui.visible(byId('account-apple-link'), source === 'apple');
+      ui.message('account-name', profile && profile.nickname ? profile.nickname : ui.names[source]);
+      ui.message('account-state', profile ? '已登录' :
+        (supported ? '用 ' + scanWith[source] + ' 扫码登录' : 'Palm 上提供曲库搜索和试听。账号授权和完整播放需要支持 MusicKit 的设备。'));
+      Array.prototype.forEach.call(tabs, function (tab) {
+        var active = tab.getAttribute('data-account') === source;
+        tab.className = active ? 'active' : '';
+        tab.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      refreshEntry();
     }
 
     function clearQR(cancel) {
@@ -60,18 +84,21 @@
       if (cancel && old) { call('logout', {token: old}, function () {}); }
     }
 
-    function expire(message) {
+    function expire(provider, message) {
+      profiles[provider] = null;
+      storeToken('', provider);
+      ui.stopPlayback(provider);
+      refreshEntry();
+      if (source !== provider) { return; }
       clearQR(true);
-      storeToken('');
       profile = null;
-      ui.stopPlayback();
       resetList();
       refreshProfile();
       if (opened) {
         ui.visible(byId('account-home'), true);
-        ui.message('account-title', '网易云账号');
+        ui.message('account-title', '音源账号');
       }
-      ui.message('account-state', message || '网易云登录已失效，请重新扫码。');
+      ui.message('account-state', message || '登录已失效，请重新扫码。');
     }
 
     function poll(revision) {
@@ -94,7 +121,7 @@
           retries = 0;
           if (data.state === 'signed_in') {
             storeToken(pending);
-            profile = data.profile;
+            profile = profiles[source] = data.profile;
             clearQR(false);
             refreshProfile();
             showLibrary();
@@ -105,21 +132,22 @@
             ui.message('account-state', '二维码已过期，请重新生成。');
             return;
           }
-          ui.message('account-state', data.state === 'confirming' ? '已扫码，请在手机上确认。' : '请用网易云音乐 App 扫码并确认。');
+          ui.message('account-state', data.state === 'confirming' ? '已扫码，请在手机上确认。' : '请用 ' + scanWith[source] + ' 扫码并确认。');
         }
         qrTimer = setTimeout(function () { poll(revision); }, 2200);
       });
     }
 
     function startLogin() {
-      if (profile) { return; }
+      if (profile || !scanWith[source]) { return; }
       clearQR(true);
       var revision = qrRevision;
+      var provider = source;
       byId('account-login').disabled = true;
-      ui.message('account-state', '正在向网易云申请登录码…');
+      ui.message('account-state', '正在向 ' + ui.names[source] + ' 申请登录码…');
       call('start', {}, function (error, data) {
         if (revision !== qrRevision) {
-          if (data && data.token) { call('logout', {token: data.token}, function () {}); }
+          if (data && data.token) { call('logout', {token: data.token}, function () {}, provider); }
           return;
         }
         byId('account-login').disabled = false;
@@ -133,7 +161,7 @@
         byId('account-qr').src = data.image;
         ui.visible(byId('account-qr'), true);
         ui.message('account-login', '刷新二维码');
-        ui.message('account-state', '请用网易云音乐 App 扫码并确认。');
+        ui.message('account-state', '请用 ' + scanWith[source] + ' 扫码并确认。');
         qrTimer = setTimeout(function () { poll(revision); }, 1500);
       });
     }
@@ -151,7 +179,7 @@
 
     function showLibrary() {
       resetList();
-      ui.message('account-title', profile ? '我的音乐' : '网易云账号');
+      ui.message('account-title', profile ? '我的音乐' : '音源账号');
       ui.visible(byId('account-home'), true);
       if (profile) { loadPage(); }
     }
@@ -198,7 +226,7 @@
         if (revision !== listRevision || !opened) { return; }
         more.disabled = false;
         if (status === 401) {
-          expire(error);
+          expire(source, error);
           return;
         }
         if (error) {
@@ -216,7 +244,7 @@
             fragment.appendChild(playlistRow(item));
             return;
           }
-          var row = ui.trackRow(item, activeSong === item.id, function () {
+          var row = ui.trackRow(item, activeSource === item.source && activeSong === item.id, function () {
             ui.play(tracks, base + index);
           });
           row.setAttribute('data-track-id', item.id);
@@ -251,18 +279,30 @@
     function open() {
       opened = true;
       ui.visible(byId('account-screen'), true);
-      refreshProfile();
-      showLibrary();
+      switchProvider(ui.source());
       ui.layout();
       byId('account-back').focus();
     }
 
+    function switchProvider(provider) {
+      clearQR(true);
+      source = provider;
+      token = tokens[source] || '';
+      profile = profiles[source];
+      refreshProfile();
+      showLibrary();
+    }
+
     function logout() {
+      var provider = source;
       byId('account-logout').disabled = true;
       call('logout', {token: token}, function (error) {
         byId('account-logout').disabled = false;
-        if (error) { ui.message('account-state', error); return; }
-        expire('已退出登录。');
+        if (error) {
+          if (source === provider) { ui.message('account-state', error); }
+          return;
+        }
+        expire(provider, '已退出登录。');
       });
     }
 
@@ -271,36 +311,48 @@
     byId('account-login').onclick = startLogin;
     byId('account-logout').onclick = logout;
     byId('account-more').onclick = loadPage;
-    if (token) {
-      var saved = token;
+    Array.prototype.forEach.call(tabs, function (tab) {
+      tab.onclick = function () {
+        var next = tab.getAttribute('data-account');
+        if (next !== source) { switchProvider(next); }
+      };
+    });
+    providers.forEach(function (provider) {
+      var saved = readToken(provider);
+      tokens[provider] = saved;
+      if (!saved) { return; }
       call('status', {token: saved}, function (error, data) {
-        if (token !== saved || pending) { return; }
-        if (error) { return; }
+        if (tokens[provider] !== saved || error || (source === provider && pending)) { return; }
         if (data.state === 'signed_in') {
-          profile = data.profile;
-          refreshProfile();
-          if (opened) { showLibrary(); }
+          profiles[provider] = data.profile;
+          refreshEntry();
+          if (opened && source === provider) {
+            profile = data.profile;
+            refreshProfile();
+            showLibrary();
+          }
         } else {
-          storeToken('');
+          storeToken('', provider);
         }
-      });
-    }
+      }, provider);
+    });
 
     return {
       opened: function () { return opened; },
       close: close,
       back: back,
       expired: expire,
-      fetchPlay: function (id, done) {
-        call('play', {token: token, id: id}, done);
+      fetchPlay: function (provider, id, done) {
+        call('play', {token: tokens[provider], id: id}, done, provider);
       },
-      signedIn: function () { return Boolean(profile); },
+      signedIn: function (provider) { return Boolean(profiles[provider]); },
       select: function (track) {
-        activeSong = track && track.source === 'netease' ? track.id : '';
+        activeSource = track ? track.source : '';
+        activeSong = track ? track.id : '';
         var rows = byId('account-list').getElementsByTagName('li');
         Array.prototype.forEach.call(rows, function (row) {
           var id = row.getAttribute('data-track-id');
-          if (id) { row.firstChild.className = id === activeSong ? 'track selected' : 'track'; }
+          if (id) { row.firstChild.className = source === activeSource && id === activeSong ? 'track selected' : 'track'; }
         });
       }
     };

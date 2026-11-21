@@ -43,27 +43,34 @@ func (c Catalog) tencentSearch(ctx context.Context, query string, page int) (Res
 	return result, nil
 }
 
+type tencentSong struct {
+	Mid  string
+	Type int
+	File struct {
+		MediaMid string `json:"media_mid"`
+		SizeMP3  int64  `json:"size_128mp3"`
+		SizeAAC  int64  `json:"size_96aac"`
+	}
+}
+
+func (c Catalog) tencentSongDetails(ctx context.Context, id string) (tencentSong, error) {
+	var response struct{ Data []tencentSong }
+	err := c.get(ctx, "https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg",
+		url.Values{"songmid": {id}, "platform": {"yqq"}, "format": {"json"}}, qqReferer, qqAgent, &response)
+	if err != nil || len(response.Data) == 0 {
+		return tencentSong{}, err
+	}
+	if response.Data[0].Mid != id {
+		return tencentSong{}, nil
+	}
+	return response.Data[0], nil
+}
+
 // Request the site's normal guest playback URLs, without an account session.
 func (c Catalog) tencentMedia(ctx context.Context, id string) (string, error) {
-	var details struct {
-		Data []struct {
-			Mid  string
-			Type int
-			File struct {
-				MediaMid string `json:"media_mid"`
-				SizeMP3  int64  `json:"size_128mp3"`
-				SizeAAC  int64  `json:"size_96aac"`
-			}
-		}
-	}
-	err := c.get(ctx, "https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg",
-		url.Values{"songmid": {id}, "platform": {"yqq"}, "format": {"json"}}, qqReferer, qqAgent, &details)
-	if err != nil || len(details.Data) == 0 {
+	song, err := c.tencentSongDetails(ctx, id)
+	if err != nil || !ValidID("tencent", song.File.MediaMid) {
 		return "", err
-	}
-	song := details.Data[0]
-	if !ValidID("tencent", song.File.MediaMid) || song.Mid != id {
-		return "", nil
 	}
 	var filenames []string
 	if song.File.SizeMP3 > 0 {

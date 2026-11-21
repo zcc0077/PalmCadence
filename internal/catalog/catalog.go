@@ -36,8 +36,9 @@ type Media struct {
 }
 
 type Catalog struct {
-	Client     *http.Client
-	Storefront string
+	Client        *http.Client
+	AccountClient *http.Client
+	Storefront    string
 }
 
 var (

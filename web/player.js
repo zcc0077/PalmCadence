@@ -57,7 +57,8 @@
   var previewFade = mediaFade(storeAudio);
   var account = window.createPalmAccount({
     request: get, visible: visible, message: message, trackRow: trackRow,
-    play: playPersonal, stopPlayback: stopPersonalPlayback, layout: syncLayout
+    play: playPersonal, stopPlayback: stopPersonalPlayback, layout: syncLayout,
+    source: function () { return source; }, names: sourceNames
   });
 
   function readPreferences() {
@@ -113,7 +114,7 @@
     var timer = setTimeout(function () {
       complete('连接超时，请检查网络。');
       xhr.abort();
-    }, 15000);
+    }, path.indexOf('/api/account/') === 0 ? 42000 : 15000);
     function complete(error, data, status) {
       if (done) { return; }
       done = true;
@@ -407,8 +408,8 @@
     playAt(index);
   }
 
-  function stopPersonalPlayback() {
-    if (!personalQueue && !playbackAuthenticated) { return; }
+  function stopPersonalPlayback(provider) {
+    if ((!personalQueue && !playbackAuthenticated) || !queue[currentIndex] || queue[currentIndex].source !== provider) { return; }
     playbackVersion += 1;
     clearTimeout(playbackWatchdog);
     resetAudio(audio, trackFade);
@@ -440,7 +441,7 @@
     resumeWhenReady = true;
     clearTimeout(playbackWatchdog);
     currentIndex = index;
-    playbackAuthenticated = track.source === 'netease' && account.signedIn();
+    playbackAuthenticated = account.signedIn(track.source);
     account.select(track);
     mediaPath = '';
     resetAudio(audio, trackFade);
@@ -486,11 +487,11 @@
       get('/api/play?source=' + track.source + '&id=' + encodeURIComponent(track.id), loadTrack);
     }
     if (playbackAuthenticated) {
-      account.fetchPlay(track.id, function (error, data, status) {
+      account.fetchPlay(track.source, track.id, function (error, data, status) {
         if (version !== playbackVersion) { return; }
         if (status === 401) {
           playbackAuthenticated = false;
-          account.expired(error);
+          account.expired(track.source, error);
           if (version === playbackVersion) { guestStream(); }
           return;
         }
